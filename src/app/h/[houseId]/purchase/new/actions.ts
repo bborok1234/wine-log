@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { setFlash } from "@/lib/flash";
+import { toStoredWineImagePath } from "@/lib/storage-image";
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -27,6 +28,8 @@ export async function savePurchase(formData: FormData) {
   const country = getString(formData, "country") || null;
   const region = getString(formData, "region") || null;
   const type = getString(formData, "type") || null;
+  const labelPath = getString(formData, "label_path") || null;
+  const labelUrl = getString(formData, "label_url") || null;
 
   const unitPrice = getNumber(formData, "unit_price");
   const quantity = getNumber(formData, "quantity");
@@ -87,6 +90,38 @@ export async function savePurchase(formData: FormData) {
       }
 
     wineId = created.data.id;
+  }
+
+  // 라벨 이미지 URL이 있으면 label_photo_urls에 추가
+  const imageValue = labelPath
+    ? toStoredWineImagePath(labelPath)
+    : labelUrl
+    ? labelUrl
+    : null;
+
+  if (imageValue) {
+    const current = await supabase
+      .from("wines")
+      .select("label_photo_urls")
+      .eq("id", wineId)
+      .maybeSingle();
+
+    const existingUrls =
+      (current.data?.label_photo_urls as string[] | null) ?? [];
+
+    const updated = await supabase
+      .from("wines")
+      .update({ label_photo_urls: [...existingUrls, imageValue] })
+      .eq("id", wineId);
+
+    if (updated.error) {
+      console.error("[savePurchase] label url save failed", updated.error);
+      await setFlash({
+        kind: "error",
+        message: "이미지 URL을 저장하지 못했어요. 다시 시도해주세요.",
+      });
+      redirect(`/h/${houseId}/purchase/new`);
+    }
   }
 
   const inserted = await supabase.from("purchases").insert({

@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
 import { setFlash } from "@/lib/flash";
+import { toStoredWineImagePath } from "@/lib/storage-image";
+import { createClient } from "@/lib/supabase/server";
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -25,7 +26,9 @@ export async function openBottleFromDetail(formData: FormData) {
   if (!houseId || !wineId) redirect("/app?error=bad-request");
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc("rpc_open_bottle", { p_wine_id: wineId });
+  const { error } = await supabase.rpc("rpc_open_bottle", {
+    p_wine_id: wineId,
+  });
   if (error) {
     await setFlash({ kind: "error", message: error.message });
     redirect(`/h/${houseId}/wine/${wineId}`);
@@ -59,4 +62,60 @@ export async function updateNotes(formData: FormData) {
   revalidatePath(`/h/${houseId}/wine/${wineId}`);
 }
 
+export async function updateWineInfo(formData: FormData) {
+  const houseId = getString(formData, "houseId");
+  const wineId = getString(formData, "wineId");
+  if (!houseId || !wineId) redirect("/app?error=bad-request");
 
+  const producer = getString(formData, "producer");
+  const nameRaw = getString(formData, "name");
+  const name = nameRaw ? nameRaw : undefined;
+  const vintageRaw = getIntOrNull(formData, "vintage");
+  const vintage = vintageRaw ?? undefined;
+  const country = getString(formData, "country") || null;
+  const region = getString(formData, "region") || null;
+  const type = getString(formData, "type") || null;
+  const labelPath = getString(formData, "label_path");
+
+  if (!producer) {
+    await setFlash({ kind: "error", message: "생산자는 필수입니다." });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+
+  const supabase = await createClient();
+
+  let nextLabelPhotoUrls: string[] | undefined = undefined;
+  if (labelPath) {
+    const stored = toStoredWineImagePath(labelPath);
+    const current = await supabase
+      .from("wines")
+      .select("label_photo_urls")
+      .eq("id", wineId)
+      .eq("house_id", houseId)
+      .maybeSingle();
+
+    const existing = (current.data?.label_photo_urls as string[] | null) ?? [];
+    nextLabelPhotoUrls = [stored, ...existing.filter((u) => u !== stored)];
+  }
+
+  const { error } = await supabase
+    .from("wines")
+    .update({
+      producer,
+      name,
+      vintage,
+      country,
+      region,
+      type,
+      ...(nextLabelPhotoUrls ? { label_photo_urls: nextLabelPhotoUrls } : {}),
+    })
+    .eq("id", wineId)
+    .eq("house_id", houseId);
+
+  if (error) {
+    await setFlash({ kind: "error", message: error.message });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+
+  revalidatePath(`/h/${houseId}/wine/${wineId}`);
+}

@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Wine Log
+
+Next.js(App Router) + Supabase로 만든 집 와인 셀러/기록 앱입니다.
 
 ## Getting Started
 
-First, run the development server:
+### 요구사항
+
+- Node.js 20+
+- pnpm
+
+### 환경변수
+
+루트에 `.env.local`을 만들고 아래 값을 설정하세요.
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `OPENAI_API_KEY` (AI 기능 사용 시)
+- `OPENAI_MODEL` (선택)
+
+### 개발 서버 실행
+
+의존성 설치 후 개발 서버를 실행합니다.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+브라우저에서 `http://localhost:3000`을 열어 확인합니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 프로덕션 빌드
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm build
+pnpm start
+```
 
-## Learn More
+## Supabase
 
-To learn more about Next.js, take a look at the following resources:
+### 마이그레이션
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+마이그레이션은 `supabase/migrations/`에 있습니다. (로컬 Supabase 사용 시)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+supabase start
+supabase db reset
+```
 
-## Deploy on Vercel
+### DB 타입 재생성
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+DB 스키마가 바뀌면 `src/lib/database.types.ts`를 최신으로 갱신하세요.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+supabase gen types typescript --local > src/lib/database.types.ts
+```
+
+> Cursor를 쓰는 경우, Supabase MCP의 타입 생성 기능으로도 동일하게 갱신할 수 있습니다.
+
+## 참고
+
+- `jsonb` 컬럼(예: `wines.sommelier_advice`)은 앱에서 `src/lib/sommelier-advice.ts`의 파서/가드를 통해 도메인 타입으로 안전하게 다룹니다.

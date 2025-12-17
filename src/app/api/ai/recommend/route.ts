@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { generateJson } from "@/lib/ai/gemini";
+import { generateJson } from "@/lib/ai/openai";
 import { requireAuthedUser, requireHouseAccess } from "@/lib/house";
 import { createClient } from "@/lib/supabase/server";
 
@@ -69,7 +69,21 @@ export async function POST(req: Request) {
     ...lines,
   ].join("\n");
 
-  const rec = await generateJson<Recommendation>({ prompt });
+  const recommendationSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      wineId: { type: "string" },
+      reason: { type: "string" },
+      pairing: { type: "string" },
+    },
+    required: ["wineId", "reason", "pairing"],
+  } as const;
+
+  const rec = await generateJson<Recommendation>({
+    prompt,
+    jsonSchema: { name: "recommendation", schema: recommendationSchema, strict: true },
+  });
   return NextResponse.json({ data: rec });
 }
 

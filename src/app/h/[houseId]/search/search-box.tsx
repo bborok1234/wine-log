@@ -13,7 +13,8 @@ export function SearchBox({
   placeholder = "이름, 지역, 생산자, 국가 검색...",
   inputClassName,
 }: SearchBoxProps) {
-  const [q, setQ] = useQueryState("q", { defaultValue: "" });
+  // shallow=false: URL 변경 시 RSC(서버 컴포넌트) 재렌더가 되도록(검색 결과 갱신)
+  const [q, setQ] = useQueryState("q", { defaultValue: "", shallow: false });
 
   return (
     <div className="relative">
@@ -21,7 +22,7 @@ export function SearchBox({
         className={["!pl-12", inputClassName ?? ""].join(" ")}
         placeholder={placeholder}
         value={q}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={(e) => setQ(e.target.value, { shallow: false })}
       />
       <svg
         className="w-5 h-5 text-stone-400 absolute left-4 top-[14px]"

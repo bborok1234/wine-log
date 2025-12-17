@@ -1,13 +1,14 @@
 import { Layout } from "@/components/layout";
 import { Button, Card, Input, Select, WineTypeBadge } from "@/components/ui";
 import { getFlash } from "@/lib/flash";
-import { createClient } from "@/lib/supabase/server";
 import { requireAuthedUser, requireHouseAccess } from "@/lib/house";
+import { resolveWineImageUrl } from "@/lib/storage-image";
+import { createClient } from "@/lib/supabase/server";
 
 import { SearchBox } from "@/app/h/[houseId]/search/search-box";
 
-import { AiWineAutofill } from "./ai-wine-autofill";
 import { savePurchase } from "./actions";
+import { AiWineAutofill } from "./ai-wine-autofill";
 
 export default async function AddPurchasePage({
   params,
@@ -16,7 +17,11 @@ export default async function AddPurchasePage({
   params: { houseId: string } | Promise<{ houseId: string }>;
   searchParams?:
     | { wineId?: string; q?: string; step?: "select" | "create" | "form" }
-    | Promise<{ wineId?: string; q?: string; step?: "select" | "create" | "form" }>;
+    | Promise<{
+        wineId?: string;
+        q?: string;
+        step?: "select" | "create" | "form";
+      }>;
 }) {
   const { houseId } = await Promise.resolve(params);
   const sp = await Promise.resolve(searchParams ?? {});
@@ -40,6 +45,11 @@ export default async function AddPurchasePage({
           .or(`producer.ilike.%${escaped}%,name.ilike.%${escaped}%`)
           .limit(20)
       : { data: [], error: null as null | { message: string } };
+    const signedThumbs = await Promise.all(
+      (result.data ?? []).map((w) =>
+        resolveWineImageUrl(supabase, w.label_photo_urls?.[0] ?? null)
+      )
+    );
 
     return (
       <Layout backHref={`/h/${houseId}/cellar`} title="와인 선택">
@@ -51,7 +61,9 @@ export default async function AddPurchasePage({
 
           <div className="mb-6 mt-5">
             <a
-              href={`/h/${houseId}/purchase/new?step=create&q=${encodeURIComponent(q)}`}
+              href={`/h/${houseId}/purchase/new?step=create&q=${encodeURIComponent(
+                q
+              )}`}
               className="w-full py-4 border-2 border-dashed border-stone-300 rounded-2xl text-stone-500 font-bold hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all flex items-center justify-center gap-2 group"
             >
               <span className="w-8 h-8 rounded-full bg-stone-100 text-stone-400 group-hover:bg-rose-100 group-hover:text-rose-500 flex items-center justify-center transition-colors">
@@ -83,21 +95,23 @@ export default async function AddPurchasePage({
           <div className="space-y-3">
             {result.error ? (
               <Card className="animate-fade-in-up">
-                <div className="text-sm text-red-600">{result.error.message}</div>
+                <div className="text-sm text-red-600">
+                  {result.error.message}
+                </div>
               </Card>
             ) : result.data?.length ? (
               <>
                 <p className="text-xs font-bold text-stone-400 uppercase tracking-wider px-2">
                   검색 결과
                 </p>
-                {result.data.map((wine) => {
-                  const thumbnail = wine.label_photo_urls?.[0] ?? null;
+                {result.data.map((wine, idx) => {
+                  const thumbnail = signedThumbs[idx] ?? null;
                   return (
                     <a
                       key={wine.id}
-                      href={`/h/${houseId}/purchase/new?step=form&wineId=${wine.id}&q=${encodeURIComponent(
-                        q
-                      )}`}
+                      href={`/h/${houseId}/purchase/new?step=form&wineId=${
+                        wine.id
+                      }&q=${encodeURIComponent(q)}`}
                     >
                       <Card>
                         <div className="flex gap-3">
@@ -117,7 +131,9 @@ export default async function AddPurchasePage({
                             </div>
                             <div className="text-stone-500 font-medium truncate">
                               {wine.name}{" "}
-                              <span className="text-stone-400">{wine.vintage}</span>
+                              <span className="text-stone-400">
+                                {wine.vintage}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -142,7 +158,9 @@ export default async function AddPurchasePage({
     step === "form" && wineId
       ? await supabase
           .from("wines")
-          .select("id,producer,name,vintage,country,region,type,label_photo_urls")
+          .select(
+            "id,producer,name,vintage,country,region,type,label_photo_urls"
+          )
           .eq("id", wineId)
           .eq("house_id", houseId)
           .maybeSingle()
@@ -155,9 +173,7 @@ export default async function AddPurchasePage({
           ? `/h/${houseId}/purchase/new?step=select&q=${encodeURIComponent(q)}`
           : `/h/${houseId}/purchase/new?step=select&q=${encodeURIComponent(q)}`
       }
-      title={
-        step === "create" ? "새 와인 등록" : "구매 기록 추가"
-      }
+      title={step === "create" ? "새 와인 등록" : "구매 기록 추가"}
     >
       <div className="px-5 pt-6 space-y-4 pb-24">
         {flash?.kind === "error" ? (
@@ -169,7 +185,11 @@ export default async function AddPurchasePage({
         <Card className="animate-fade-in-up">
           <form>
             <input type="hidden" name="houseId" value={houseId} />
-            <input type="hidden" name="wineId" value={existingWine.data?.id ?? ""} />
+            <input
+              type="hidden"
+              name="wineId"
+              value={existingWine.data?.id ?? ""}
+            />
 
             {existingWine.error ? (
               <div className="text-sm text-red-600 mb-4">
@@ -214,7 +234,7 @@ export default async function AddPurchasePage({
                   <div className="block text-xl font-bold text-stone-800">
                     어떤 와인인가요?
                   </div>
-                  <AiWineAutofill initialText={q} />
+                  <AiWineAutofill initialText={q} houseId={houseId} />
                 </div>
 
                 <div className="border-t border-stone-200/50 pt-5 mt-5">
@@ -288,11 +308,6 @@ export default async function AddPurchasePage({
                   type="date"
                   defaultValue={today}
                 />
-                <Input
-                  label="영수증/라벨 URL(선택)"
-                  name="receipt_photo_url"
-                  placeholder="https://..."
-                />
               </div>
             ) : null}
 
@@ -307,5 +322,3 @@ export default async function AddPurchasePage({
     </Layout>
   );
 }
-
-
