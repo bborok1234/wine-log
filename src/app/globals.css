@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #f9f9f8;
   --foreground: #171717;
 }
 
@@ -10,6 +10,18 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Wine palette (design_code 참고) */
+  --color-wine-50: #fdf2f3;
+  --color-wine-100: #fce7e9;
+  --color-wine-200: #f8cfd4;
+  --color-wine-300: #f2a7b1;
+  --color-wine-400: #e66f7f;
+  --color-wine-500: #d12a3f;
+  --color-wine-600: #b21f33;
+  --color-wine-700: #8d1829;
+  --color-wine-800: #6c1321;
+  --color-wine-900: #4a0d17;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +34,71 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .glass-nav {
+    background: color-mix(in oklab, white 70%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid color-mix(in oklab, #e7e5e4 40%, transparent);
+  }
+
+  .glass-card {
+    background: color-mix(in oklab, white 85%, transparent);
+    backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in oklab, #ffffff 70%, transparent);
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 160ms ease-out both;
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 240ms ease-out both;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 180ms ease-out both;
+  }
 }
