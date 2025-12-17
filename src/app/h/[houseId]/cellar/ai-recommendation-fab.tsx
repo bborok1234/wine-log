@@ -1,11 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface Recommendation {
   wineId: string;
   reason: string;
   pairing: string;
+  wine: {
+    id: string;
+    producer: string;
+    name: string | null;
+    vintage: number | null;
+    type: string | null;
+    region: string | null;
+    country: string | null;
+  } | null;
 }
 
 async function postJson<T>(url: string, body: unknown) {
@@ -16,10 +26,15 @@ async function postJson<T>(url: string, body: unknown) {
   });
   const json = (await res.json().catch(() => ({}))) as unknown;
   const error =
-    typeof json === "object" && json && "error" in json ? (json as { error?: unknown }).error : null;
+    typeof json === "object" && json && "error" in json
+      ? (json as { error?: unknown }).error
+      : null;
   const data =
-    typeof json === "object" && json && "data" in json ? (json as { data?: unknown }).data : null;
-  if (!res.ok) throw new Error(typeof error === "string" ? error : "요청에 실패했어요.");
+    typeof json === "object" && json && "data" in json
+      ? (json as { data?: unknown }).data
+      : null;
+  if (!res.ok)
+    throw new Error(typeof error === "string" ? error : "요청에 실패했어요.");
   return data as T;
 }
 
@@ -41,14 +56,110 @@ export function AiRecommendationFab({
     setRec(null);
     setErrorMessage(null);
     try {
-      const data = await postJson<Recommendation>("/api/ai/recommend", { houseId });
+      const data = await postJson<Recommendation>("/api/ai/recommend", {
+        houseId,
+      });
       setRec(data);
     } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "AI 연결에 실패했습니다.");
+      setErrorMessage(
+        e instanceof Error ? e.message : "AI 연결에 실패했습니다."
+      );
     } finally {
       setIsLoading(false);
     }
   }
+
+  const modal = useMemo(() => {
+    if (!isOpen) return null;
+
+    return (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center p-5 bg-indigo-900/30 backdrop-blur-md animate-fade-in"
+        onClick={() => setIsOpen(false)}
+      >
+        <div
+          className="glass-card bg-white/95 rounded-[32px] p-6 w-full max-w-sm shadow-2xl animate-scale-in border border-white/80 relative overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {isLoading ? (
+            <div className="text-center py-10">
+              <div className="w-20 h-20 mx-auto mb-6 relative">
+                <div className="absolute inset-0 bg-indigo-100 rounded-full animate-ping opacity-75" />
+                <div className="relative w-full h-full bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center text-4xl shadow-inner">
+                  ✨
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-stone-800 mb-2">
+                AI 소믈리에가 고민 중...
+              </h3>
+              <p className="text-stone-500 text-sm">
+                보유하신 와인 중에서
+                <br />
+                오늘 가장 완벽한 한 병을 고르고 있어요.
+              </p>
+            </div>
+          ) : errorMessage ? (
+            <div className="text-center py-10">
+              <div className="text-sm text-rose-600 font-bold">
+                {errorMessage}
+              </div>
+            </div>
+          ) : rec ? (
+            <>
+              <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl pointer-events-none">
+                🍷
+              </div>
+              <h3 className="text-xs font-extrabold text-indigo-500 uppercase tracking-widest mb-1 text-center">
+                Today&apos;s Pick
+              </h3>
+              <h2 className="text-2xl font-serif font-bold text-stone-900 text-center mb-6">
+                오늘의 추천 와인
+              </h2>
+
+              {rec.wine ? (
+                <div className="bg-indigo-50/50 p-4 rounded-2xl mb-6 border border-indigo-100 text-center">
+                  <div className="font-bold text-lg text-stone-800 leading-tight mb-1">
+                    {rec.wine.producer}
+                  </div>
+                  <div className="text-stone-600 font-medium mb-3">
+                    {rec.wine.name}
+                    {rec.wine.vintage ? ` ${rec.wine.vintage}` : ""}
+                  </div>
+                  <div className="inline-block px-3 py-1 bg-white rounded-full text-xs font-bold text-indigo-600 shadow-sm border border-indigo-50">
+                    {(rec.wine.type ?? "other").toString()}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="space-y-4 mb-8">
+                <div className="text-sm text-stone-700 leading-relaxed">
+                  <span className="text-lg mr-2">💬</span>
+                  &quot;{rec.reason}&quot;
+                </div>
+                <div className="text-sm text-stone-700 leading-relaxed bg-stone-50 p-3 rounded-xl">
+                  <span className="font-bold text-stone-900 mr-2">
+                    🍽 곁들임 추천:
+                  </span>
+                  {rec.pairing}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-full px-6 py-4 text-sm font-bold bg-gradient-to-br from-wine-700 to-wine-900 text-white shadow-lg shadow-wine-200 hover:shadow-wine-300 hover:brightness-105 w-full"
+                onClick={() => {
+                  setIsOpen(false);
+                  window.location.href = `/h/${houseId}/wine/${rec.wineId}`;
+                }}
+              >
+                보러 가기
+              </button>
+            </>
+          ) : null}
+        </div>
+      </div>
+    );
+  }, [errorMessage, houseId, isLoading, isOpen, rec]);
 
   return (
     <>
@@ -86,76 +197,9 @@ export function AiRecommendationFab({
         </a>
       </div>
 
-      {isOpen ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-5 bg-indigo-900/30 backdrop-blur-md animate-fade-in"
-          onClick={() => setIsOpen(false)}
-        >
-          <div
-            className="glass-card bg-white/95 rounded-[32px] p-6 w-full max-w-sm shadow-2xl animate-scale-in border border-white/80 relative overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {isLoading ? (
-              <div className="text-center py-10">
-                <div className="w-20 h-20 mx-auto mb-6 relative">
-                  <div className="absolute inset-0 bg-indigo-100 rounded-full animate-ping opacity-75" />
-                  <div className="relative w-full h-full bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center text-4xl shadow-inner">
-                    ✨
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold text-stone-800 mb-2">
-                  AI 소믈리에가 고민 중...
-                </h3>
-                <p className="text-stone-500 text-sm">
-                  보유하신 와인 중에서
-                  <br />
-                  오늘 가장 완벽한 한 병을 고르고 있어요.
-                </p>
-              </div>
-            ) : errorMessage ? (
-              <div className="text-center py-10">
-                <div className="text-sm text-rose-600 font-bold">{errorMessage}</div>
-              </div>
-            ) : rec ? (
-              <>
-                <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl pointer-events-none">
-                  🍷
-                </div>
-                <h3 className="text-xs font-extrabold text-indigo-500 uppercase tracking-widest mb-1 text-center">
-                  Today&apos;s Pick
-                </h3>
-                <h2 className="text-2xl font-serif font-bold text-stone-900 text-center mb-6">
-                  오늘의 추천 와인
-                </h2>
-
-                <div className="space-y-4 mb-8">
-                  <div className="text-sm text-stone-700 leading-relaxed">
-                    <span className="text-lg mr-2">💬</span>
-                    &quot;{rec.reason}&quot;
-                  </div>
-                  <div className="text-sm text-stone-700 leading-relaxed bg-stone-50 p-3 rounded-xl">
-                    <span className="font-bold text-stone-900 mr-2">🍽 곁들임 추천:</span>
-                    {rec.pairing}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-full px-6 py-4 text-sm font-bold bg-gradient-to-br from-wine-700 to-wine-900 text-white shadow-lg shadow-wine-200 hover:shadow-wine-300 hover:brightness-105 w-full"
-                  onClick={() => {
-                    setIsOpen(false);
-                    window.location.href = `/h/${houseId}/wine/${rec.wineId}`;
-                  }}
-                >
-                  보러 가기
-                </button>
-              </>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      {typeof document !== "undefined" && modal
+        ? createPortal(modal, document.body)
+        : modal}
     </>
   );
 }
-
-

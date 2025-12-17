@@ -20,13 +20,19 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => ({}))) as RecommendRequestBody;
   const houseId = typeof body.houseId === "string" ? body.houseId.trim() : "";
-  if (!houseId) return NextResponse.json({ error: "houseId가 필요합니다." }, { status: 400 });
+  if (!houseId)
+    return NextResponse.json(
+      { error: "houseId가 필요합니다." },
+      { status: 400 }
+    );
 
   await requireHouseAccess(supabase, houseId);
 
   const wines = await supabase
     .from("wines")
-    .select("id,producer,name,vintage,country,region,type,stock_qty,avg_purchase_price,rating")
+    .select(
+      "id,producer,name,vintage,country,region,type,stock_qty,avg_purchase_price,rating"
+    )
     .eq("house_id", houseId)
     .gt("stock_qty", 0)
     .order("stock_qty", { ascending: false })
@@ -36,7 +42,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: wines.error.message }, { status: 500 });
 
   if (!wines.data?.length)
-    return NextResponse.json({ error: "보유 중인 와인이 없어요." }, { status: 400 });
+    return NextResponse.json(
+      { error: "보유 중인 와인이 없어요." },
+      { status: 400 }
+    );
 
   const lines = wines.data.map((w) =>
     JSON.stringify({
@@ -82,9 +91,28 @@ export async function POST(req: Request) {
 
   const rec = await generateJson<Recommendation>({
     prompt,
-    jsonSchema: { name: "recommendation", schema: recommendationSchema, strict: true },
+    jsonSchema: {
+      name: "recommendation",
+      schema: recommendationSchema,
+      strict: true,
+    },
   });
-  return NextResponse.json({ data: rec });
+
+  const picked = wines.data.find((w) => w.id === rec.wineId) ?? null;
+  return NextResponse.json({
+    data: {
+      ...rec,
+      wine: picked
+        ? {
+            id: picked.id,
+            producer: picked.producer,
+            name: picked.name,
+            vintage: picked.vintage,
+            type: picked.type,
+            region: picked.region,
+            country: picked.country,
+          }
+        : null,
+    },
+  });
 }
-
-
