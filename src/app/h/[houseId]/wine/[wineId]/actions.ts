@@ -166,7 +166,7 @@ export async function deletePurchase(formData: FormData) {
 
   const { wine_id, quantity, unit_price } = purchase.data;
 
-  // 구매 기록 삭제
+  // 구매 기록 삭제 (트리거가 자동으로 wines 통계를 업데이트함)
   const { error: deleteError } = await supabase
     .from("purchases")
     .delete()
@@ -176,44 +176,6 @@ export async function deletePurchase(formData: FormData) {
   if (deleteError) {
     await setFlash({ kind: "error", message: deleteError.message });
     redirect(`/h/${houseId}/wine/${wine_id}`);
-  }
-
-  // wines 통계 업데이트 (재고, 총 구매 수량, 총 구매 금액 감소)
-  const wine = await supabase
-    .from("wines")
-    .select("stock_qty,purchase_qty_total,purchase_value_total")
-    .eq("id", wine_id)
-    .eq("house_id", houseId)
-    .maybeSingle();
-
-  if (wine.data) {
-    const newStockQty = Math.max(0, wine.data.stock_qty - quantity);
-    const newPurchaseQtyTotal = Math.max(
-      0,
-      wine.data.purchase_qty_total - quantity
-    );
-    const newPurchaseValueTotal = Math.max(
-      0,
-      wine.data.purchase_value_total - unit_price * quantity
-    );
-    const newAvgPrice =
-      newPurchaseQtyTotal > 0 ? newPurchaseValueTotal / newPurchaseQtyTotal : 0;
-
-    const { error: updateError } = await supabase
-      .from("wines")
-      .update({
-        stock_qty: newStockQty,
-        purchase_qty_total: newPurchaseQtyTotal,
-        purchase_value_total: newPurchaseValueTotal,
-        avg_purchase_price: newAvgPrice,
-      })
-      .eq("id", wine_id)
-      .eq("house_id", houseId);
-
-    if (updateError) {
-      await setFlash({ kind: "error", message: updateError.message });
-      redirect(`/h/${houseId}/wine/${wine_id}`);
-    }
   }
 
   revalidatePath(`/h/${houseId}/wine/${wine_id}`);

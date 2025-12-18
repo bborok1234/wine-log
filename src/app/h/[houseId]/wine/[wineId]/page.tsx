@@ -6,7 +6,13 @@ import { parseSommelierAdvice } from "@/lib/sommelier-advice";
 import { resolveWineImageUrl } from "@/lib/storage-image";
 import { createClient } from "@/lib/supabase/server";
 
-import { openBottleFromDetail, updateNotes, updateWineInfo } from "./actions";
+import {
+  deletePurchase,
+  deleteWine,
+  openBottleFromDetail,
+  updateNotes,
+  updateWineInfo,
+} from "./actions";
 import { WineDetailShell } from "./wine-detail-shell";
 
 export default async function WineDetailPage({
@@ -126,6 +132,8 @@ export default async function WineDetailPage({
       openBottleAction={openBottleFromDetail}
       updateNotesAction={updateNotes}
       updateWineInfoAction={updateWineInfo}
+      deleteWineAction={deleteWine}
+      deletePurchaseAction={deletePurchase}
     />
   );
 }

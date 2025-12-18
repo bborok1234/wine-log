@@ -232,7 +232,8 @@ export async function importWines(formData: FormData) {
         if (existingWine.data) {
           wineId = existingWine.data.id;
         } else {
-          // purchase 추가 시 trigger에 의해 stock_qty가 증가하므로, 초기값은 0으로 설정
+          // purchase 추가 시 trigger에 의해 stock_qty, purchase_qty_total, purchase_value_total이 자동으로 증가하므로
+          // 초기값은 모두 0으로 설정
           const created = await supabase
             .from("wines")
             .insert({
@@ -244,12 +245,9 @@ export async function importWines(formData: FormData) {
               region,
               type,
               stock_qty: 0, // purchase 추가 시 trigger에 의해 증가
-              purchase_qty_total: purchaseQtyTotal,
-              purchase_value_total: purchaseValueTotal,
-              avg_purchase_price:
-                purchaseQtyTotal > 0
-                  ? purchaseValueTotal / purchaseQtyTotal
-                  : 0,
+              purchase_qty_total: 0, // purchase 추가 시 trigger에 의해 증가
+              purchase_value_total: 0, // purchase 추가 시 trigger에 의해 증가
+              avg_purchase_price: 0, // purchase 추가 시 trigger에 의해 계산됨
             })
             .select("id")
             .single();
