@@ -1,9 +1,10 @@
+import { ActionButton } from "@/components/action-button";
 import { Layout } from "@/components/layout";
-import { Button, Card, Input, WineTypeBadge } from "@/components/ui";
+import { Card, Input, WineTypeBadge } from "@/components/ui";
 import { SelectField } from "@/components/ui/select-field";
 import { getFlash } from "@/lib/flash";
 import { requireAuthedUser, requireHouseAccess } from "@/lib/house";
-import { resolveWineImageUrl } from "@/lib/storage-image";
+import { resolveWineImageUrls } from "@/lib/storage-image";
 import { createClient } from "@/lib/supabase/server";
 
 import { SearchBox } from "@/app/h/[houseId]/search/search-box";
@@ -59,10 +60,9 @@ export default async function AddPurchasePage({
           .or(`producer.ilike.%${escaped}%,name.ilike.%${escaped}%`)
           .limit(20)
       : { data: [], error: null as null | { message: string } };
-    const signedThumbs = await Promise.all(
-      (result.data ?? []).map((w) =>
-        resolveWineImageUrl(supabase, w.label_photo_urls?.[0] ?? null)
-      )
+    const signedThumbs = await resolveWineImageUrls(
+      supabase,
+      (result.data ?? []).map((w) => w.label_photo_urls?.[0] ?? null)
     );
 
     return (
@@ -372,9 +372,13 @@ export default async function AddPurchasePage({
             ) : null}
 
             <div className="pt-4">
-              <Button fullWidth formAction={savePurchase}>
+              <ActionButton
+                fullWidth
+                formAction={savePurchase}
+                pendingText="저장 중..."
+              >
                 저장
-              </Button>
+              </ActionButton>
             </div>
           </form>
         </Card>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -144,16 +145,13 @@ export function AiRecommendationFab({
                 </div>
               </div>
 
-              <button
-                type="button"
+              <Link
+                href={`/h/${houseId}/wine/${rec.wineId}`}
                 className="inline-flex items-center justify-center rounded-full px-6 py-4 text-sm font-bold bg-gradient-to-br from-wine-700 to-wine-900 text-white shadow-lg shadow-wine-200 hover:shadow-wine-300 hover:brightness-105 w-full"
-                onClick={() => {
-                  setIsOpen(false);
-                  window.location.href = `/h/${houseId}/wine/${rec.wineId}`;
-                }}
+                onClick={() => setIsOpen(false)}
               >
                 보러 가기
-              </button>
+              </Link>
             </>
           ) : null}
         </div>
@@ -167,16 +165,42 @@ export function AiRecommendationFab({
         <button
           type="button"
           onClick={handleRecommend}
+          disabled={isLoading}
           className="w-12 h-12 bg-white rounded-full shadow-lg shadow-indigo-100 flex items-center justify-center text-indigo-500 hover:scale-110 hover:text-indigo-600 transition-all border border-indigo-50 group relative"
           title="오늘 뭐 마시지?"
         >
           <div className="absolute right-full mr-3 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-sm">
             오늘 뭐 마시지?
           </div>
-          <span className="text-xl">✨</span>
+          <span className="text-xl">
+            {isLoading ? (
+              <svg
+                className="animate-spin w-5 h-5"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+            ) : (
+              "✨"
+            )}
+          </span>
         </button>
 
-        <a
+        <Link
           href={`/h/${houseId}/purchase/new?q=${encodeURIComponent(q)}`}
           className="w-16 h-16 bg-gradient-to-br from-wine-600 to-wine-800 rounded-full shadow-xl shadow-wine-200 flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-all group relative overflow-hidden"
           title="구매 추가"
@@ -194,7 +218,7 @@ export function AiRecommendationFab({
               clipRule="evenodd"
             />
           </svg>
-        </a>
+        </Link>
       </div>
 
       {typeof document !== "undefined" && modal

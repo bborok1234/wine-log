@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { ActionButton } from "@/components/action-button";
 import { Layout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
 import { getFlash } from "@/lib/flash";
@@ -10,6 +9,7 @@ import { ImportForm } from "./import-form";
 import { InviteLinkDisplay } from "./invite-link-display";
 import { RemoveMemberForm } from "./remove-member-form";
 import { createInvite, removeMember, updateProfile } from "./server-actions";
+import { SettingsAlerts } from "./settings-alerts";
 
 function formatMemberId(userId: string) {
   if (!userId) return "-";
@@ -36,8 +36,6 @@ export default async function SettingsPage({
   const query = (await searchParams) ?? {};
   const invitePath =
     typeof query.invitePath === "string" ? query.invitePath : null;
-  const isProfileSaved = query.profileSaved === "1";
-  const isMemberRemoved = query.memberRemoved === "1";
 
   const supabase = await createClient();
   await requireAuthedUser(supabase);
@@ -108,16 +106,9 @@ export default async function SettingsPage({
   return (
     <Layout backHref={`/h/${houseId}/cellar`} title="설정 및 관리">
       <div className="p-5 space-y-6">
-        {flash?.kind === "error" ? (
-          <div className="rounded-2xl px-4 py-3 text-sm border bg-red-50 border-red-100 text-red-700">
-            {flash.message}
-          </div>
-        ) : null}
-        {flash?.kind === "success" ? (
-          <div className="rounded-2xl px-4 py-3 text-sm border bg-green-50 border-green-100 text-green-700">
-            {flash.message}
-          </div>
-        ) : null}
+        <SettingsAlerts
+          flashError={flash?.kind === "error" ? flash.message : null}
+        />
 
         <section>
           <h3 className="text-lg font-bold text-stone-800 mb-3 px-1">프로필</h3>
@@ -171,21 +162,13 @@ export default async function SettingsPage({
                 />
               </div>
 
-              <Button type="submit" className="!py-2.5 !px-4">
+              <ActionButton
+                type="submit"
+                className="!py-2.5 !px-4"
+                pendingText="저장 중..."
+              >
                 프로필 저장
-              </Button>
-
-              {isProfileSaved ? (
-                <div className="flex items-center justify-between gap-3 text-sm text-stone-600">
-                  <span className="font-semibold">저장 완료</span>
-                  <Link
-                    href={`/h/${houseId}/settings`}
-                    className="text-xs font-bold text-stone-400 hover:text-stone-600"
-                  >
-                    닫기
-                  </Link>
-                </div>
-              ) : null}
+              </ActionButton>
             </form>
           </Card>
         </section>
@@ -205,18 +188,6 @@ export default async function SettingsPage({
               <p className="text-sm text-stone-500">
                 현재 하우스에 참여 중인 멤버와 권한을 확인할 수 있어요.
               </p>
-
-              {isMemberRemoved ? (
-                <div className="flex items-center justify-between gap-3 text-sm text-stone-600">
-                  <span className="font-semibold">멤버를 삭제했어요.</span>
-                  <Link
-                    href={`/h/${houseId}/settings`}
-                    className="text-xs font-bold text-stone-400 hover:text-stone-600"
-                  >
-                    닫기
-                  </Link>
-                </div>
-              ) : null}
 
               {members.error ? (
                 <div className="text-sm text-red-600">
@@ -298,21 +269,17 @@ export default async function SettingsPage({
                 {invitePath ? (
                   <div className="space-y-2">
                     <InviteLinkDisplay invitePath={invitePath} />
-                    <div className="flex justify-end">
-                      <Link
-                        href={`/h/${houseId}/settings`}
-                        className="text-xs font-bold text-stone-400 hover:text-stone-600"
-                      >
-                        닫기
-                      </Link>
-                    </div>
                   </div>
                 ) : isOwner ? (
                   <form action={createInvite} className="space-y-2">
                     <input type="hidden" name="houseId" value={houseId} />
-                    <Button type="submit" className="!py-2.5 !px-4">
+                    <ActionButton
+                      type="submit"
+                      className="!py-2.5 !px-4"
+                      pendingText="생성 중..."
+                    >
                       초대 생성
-                    </Button>
+                    </ActionButton>
                   </form>
                 ) : null}
               </div>

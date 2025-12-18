@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useMemo, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 
+import { ActionButton } from "@/components/action-button";
 import { Layout } from "@/components/layout";
 import {
   Button,
@@ -42,6 +45,56 @@ interface WineDetailData {
   comment: string | null;
   tastingReview: string | null;
   sommelierAdvice?: SommelierAdvice | null;
+}
+
+function PendingIconSubmitButton({
+  isBusy,
+  children,
+  className,
+  disabled,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  isBusy: boolean;
+}) {
+  const { pending } = useFormStatus();
+  const isPending = pending || isBusy;
+
+  return (
+    <button
+      {...props}
+      disabled={disabled || isPending}
+      aria-busy={isPending}
+      className={[
+        className ?? "",
+        isPending ? "opacity-60 cursor-not-allowed" : "",
+      ].join(" ")}
+    >
+      {isPending ? (
+        <svg
+          className="animate-spin w-4 h-4"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          />
+        </svg>
+      ) : (
+        children
+      )}
+    </button>
+  );
 }
 
 function processImage(file: File) {
@@ -115,6 +168,8 @@ export function WineDetailShell({
   const [deletingPurchaseId, setDeletingPurchaseId] = useState<string | null>(
     null
   );
+  const [isSavingInfo, setIsSavingInfo] = useState(false);
+  const [isSavingReview, setIsSavingReview] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [labelPath, setLabelPath] = useState<string>("");
@@ -139,16 +194,28 @@ export function WineDetailShell({
   const infoFormRef = useRef<HTMLFormElement | null>(null);
   async function handleSubmitReview(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (isSavingReview) return;
+    setIsSavingReview(true);
     const formData = new FormData(e.currentTarget);
-    await updateNotesAction(formData);
-    setIsEditingReview(false);
+    try {
+      await updateNotesAction(formData);
+      setIsEditingReview(false);
+    } finally {
+      setIsSavingReview(false);
+    }
   }
 
   async function handleSubmitInfo(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (isSavingInfo) return;
+    setIsSavingInfo(true);
     const formData = new FormData(e.currentTarget);
-    await updateWineInfoAction(formData);
-    setIsEditingInfo(false);
+    try {
+      await updateWineInfoAction(formData);
+      setIsEditingInfo(false);
+    } finally {
+      setIsSavingInfo(false);
+    }
   }
 
   const {
@@ -225,7 +292,7 @@ export function WineDetailShell({
               />
             </svg>
           </button>
-          <a
+          <Link
             href={`/h/${houseId}/purchase/new?wineId=${wine.id}`}
             className="text-stone-600 bg-white/40 hover:bg-white/80 backdrop-blur-md transition-colors p-2.5 rounded-full"
             title="추가 구매"
@@ -243,7 +310,7 @@ export function WineDetailShell({
                 clipRule="evenodd"
               />
             </svg>
-          </a>
+          </Link>
           <button
             type="button"
             onClick={() => setShowDeleteWineConfirm(true)}
@@ -405,11 +472,12 @@ export function WineDetailShell({
                   fullWidth
                   type="button"
                   onClick={() => setIsEditingInfo(false)}
+                  disabled={isSavingInfo}
                 >
                   취소
                 </Button>
-                <Button fullWidth type="submit">
-                  저장
+                <Button fullWidth type="submit" loading={isSavingInfo}>
+                  {isSavingInfo ? "저장 중..." : "저장"}
                 </Button>
               </div>
             </form>
@@ -655,11 +723,12 @@ export function WineDetailShell({
                         fullWidth
                         type="button"
                         onClick={() => setIsEditingReview(false)}
+                        disabled={isSavingReview}
                       >
                         취소
                       </Button>
-                      <Button fullWidth type="submit">
-                        저장하기
+                      <Button fullWidth type="submit" loading={isSavingReview}>
+                        {isSavingReview ? "저장 중..." : "저장하기"}
                       </Button>
                     </div>
                   </form>
@@ -771,9 +840,9 @@ export function WineDetailShell({
                               name="purchaseId"
                               value={p.id}
                             />
-                            <button
+                            <PendingIconSubmitButton
                               type="submit"
-                              disabled={deletingPurchaseId === p.id}
+                              isBusy={deletingPurchaseId === p.id}
                               className="p-1.5 text-stone-400 hover:text-red-600 transition-colors disabled:opacity-50"
                               title="구매 기록 삭제"
                               aria-label="구매 기록 삭제"
@@ -792,7 +861,7 @@ export function WineDetailShell({
                                   d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
                                 />
                               </svg>
-                            </button>
+                            </PendingIconSubmitButton>
                           </form>
                         </div>
                       </div>
@@ -874,12 +943,13 @@ export function WineDetailShell({
               <form action={deleteWineAction} className="w-full">
                 <input type="hidden" name="houseId" value={houseId} />
                 <input type="hidden" name="wineId" value={wine.id} />
-                <button
+                <ActionButton
                   type="submit"
                   className="inline-flex items-center justify-center rounded-full px-6 py-4 text-sm font-bold bg-red-600 text-white shadow-lg shadow-red-200 hover:shadow-red-300 hover:brightness-105 w-full"
+                  pendingText="삭제 중..."
                 >
                   삭제
-                </button>
+                </ActionButton>
               </form>
             </div>
           </div>

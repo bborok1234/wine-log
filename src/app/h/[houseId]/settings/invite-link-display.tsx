@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui";
 
@@ -17,24 +17,35 @@ export function InviteLinkDisplay({ invitePath }: Props) {
     return invitePath;
   }, [invitePath]);
 
+  const [isCopying, setIsCopying] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+
   async function handleCopy() {
+    if (isCopying) return;
+    setIsCopying(true);
     try {
       await navigator.clipboard.writeText(fullUrl);
     } catch {
       // noop
+    } finally {
+      setIsCopying(false);
     }
   }
 
   async function handleShare() {
+    if (isSharing) return;
+    setIsSharing(true);
     if (navigator.share) {
       try {
         await navigator.share({ url: fullUrl, title: "Wine Cellar 초대 링크" });
       } catch {
         // user cancelled or unsupported
       }
+      setIsSharing(false);
       return;
     }
     await handleCopy();
+    setIsSharing(false);
   }
 
   return (
@@ -59,10 +70,17 @@ export function InviteLinkDisplay({ invitePath }: Props) {
             variant="secondary"
             className="!py-2.5 !px-4"
             onClick={() => void handleCopy()}
+            loading={isCopying}
+            disabled={isSharing}
           >
             복사
           </Button>
-          <Button className="!py-2.5 !px-4" onClick={() => void handleShare()}>
+          <Button
+            className="!py-2.5 !px-4"
+            onClick={() => void handleShare()}
+            loading={isSharing}
+            disabled={isCopying}
+          >
             공유
           </Button>
         </div>

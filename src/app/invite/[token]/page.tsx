@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Layout } from "@/components/layout";
@@ -20,6 +21,7 @@ export default function InviteAcceptPage({
 }: {
   params: Promise<{ token: string }> | { token: string };
 }) {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [state, setState] = useState<AcceptState>({ status: "loading" });
 
@@ -60,7 +62,7 @@ export default function InviteAcceptPage({
           redirectPath
         )}`;
         logger.log("Invite page: No session, redirecting to:", redirectUrl);
-        window.location.href = redirectUrl;
+        router.replace(redirectUrl);
         return;
       }
 
@@ -80,7 +82,7 @@ export default function InviteAcceptPage({
       }
       setState({ status: "success", houseId: json.data?.houseId });
       if (json.data?.houseId) {
-        window.location.href = `/h/${json.data.houseId}/cellar`;
+        router.replace(`/h/${json.data.houseId}/cellar`);
       }
     }
     void accept();
@@ -115,10 +117,7 @@ export default function InviteAcceptPage({
               <div className="text-sm text-stone-500">
                 {state.message ?? "유효하지 않은 초대예요."}
               </div>
-              <Button
-                className="!mt-2"
-                onClick={() => (window.location.href = "/app")}
-              >
+              <Button className="!mt-2" onClick={() => router.replace("/app")}>
                 홈으로
               </Button>
             </>

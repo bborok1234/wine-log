@@ -1,3 +1,4 @@
+import { RouteTopLoader } from "@/components/route-toploader";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <RouteTopLoader />
         <NuqsAdapter>{children}</NuqsAdapter>
       </body>
     </html>

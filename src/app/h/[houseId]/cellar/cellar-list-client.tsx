@@ -1,9 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useQueryState } from "nuqs";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import { ActionButton } from "@/components/action-button";
 import { Card, WineTypeBadge } from "@/components/ui";
 import {
   Select,
@@ -14,13 +23,13 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
-type FilterMode = "in_stock" | "out_of_stock" | "all";
 type SortMode =
   | "stock_desc"
+  | "purchase_desc"
+  | "purchase_asc"
   | "price_desc"
   | "price_asc"
   | "rating_desc"
-  | "recent"
   | "vintage_asc"
   | "vintage_desc";
 type TypeFilter =
@@ -78,6 +87,45 @@ export interface CellarWine {
   thumbnailUrl: string | null;
 }
 
+interface CellarListPage {
+  wines: CellarWine[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  stats: unknown | null;
+}
+
+interface CellarStats {
+  onHand: {
+    bottles: number;
+    value: number;
+    byType: { red: number; white: number; sparkling: number; others: number };
+    byCountry: Array<[string, number]>;
+  };
+  consumed: {
+    bottles: number;
+    value: number;
+    byType: { red: number; white: number; sparkling: number; others: number };
+    byCountry: Array<[string, number]>;
+  };
+  total: { bottles: number; value: number };
+}
+
+const EMPTY_STATS: CellarStats = {
+  onHand: {
+    bottles: 0,
+    value: 0,
+    byType: { red: 0, white: 0, sparkling: 0, others: 0 },
+    byCountry: [],
+  },
+  consumed: {
+    bottles: 0,
+    value: 0,
+    byType: { red: 0, white: 0, sparkling: 0, others: 0 },
+    byCountry: [],
+  },
+  total: { bottles: 0, value: 0 },
+};
+
 function formatPriceManWon(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "-";
   return `${(value / 10000).toFixed(1)}만`;
@@ -85,49 +133,72 @@ function formatPriceManWon(value: number) {
 
 export function CellarListClient({
   houseId,
-  initialSearch,
-  wines,
+  initialPage,
   openBottleAction,
 }: {
   houseId: string;
-  initialSearch: string;
-  wines: CellarWine[];
+  initialPage: CellarListPage;
   openBottleAction: (formData: FormData) => void | Promise<void>;
 }) {
-  const router = useRouter();
+  const [q, setQ] = useQueryState("q", { defaultValue: "", shallow: true });
+  const [stockFilter, setStockFilter] = useQueryState("stock", {
+    defaultValue: "in_stock",
+    shallow: true,
+  });
+  const [typeFilter, setTypeFilter] = useQueryState("type", {
+    defaultValue: "ALL",
+    shallow: true,
+  });
+  const [countryFilter, setCountryFilter] = useQueryState("country", {
+    defaultValue: "",
+    shallow: true,
+  });
+  const [sortMode, setSortMode] = useQueryState("sort", {
+    defaultValue: "stock_desc",
+    shallow: true,
+  });
+  const [priceMin, setPriceMin] = useQueryState("priceMin", {
+    defaultValue: "",
+    shallow: true,
+  });
+  const [priceMax, setPriceMax] = useQueryState("priceMax", {
+    defaultValue: "",
+    shallow: true,
+  });
 
-  const [searchTerm, setSearchTerm] = useState(initialSearch);
-  const [stockFilter, setStockFilter] = useState<FilterMode>("in_stock");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
-  const [countryFilter, setCountryFilter] = useState<string>("ALL");
-  const [sortMode, setSortMode] = useState<SortMode>("stock_desc");
+  const [searchTerm, setSearchTerm] = useState(q);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [showPriceSlider, setShowPriceSlider] = useState(false);
 
-  // 가격 범위 계산
-  const priceRange = useMemo(() => {
-    const prices = wines.map((w) => w.avgPurchasePrice);
-    const hasZeroPrice = prices.some((p) => p === 0);
-    const positivePrices = prices.filter((p) => p > 0);
+  const [wines, setWines] = useState<CellarWine[]>(initialPage.wines);
+  const [nextCursor, setNextCursor] = useState<string | null>(
+    initialPage.nextCursor
+  );
+  const [hasMore, setHasMore] = useState(initialPage.hasMore);
+  const [isFetching, setIsFetching] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [countries, setCountries] = useState<string[]>([]);
+  const [stats, setStats] = useState<CellarStats>(() => {
+    const raw = initialPage.stats;
+    if (!raw) return EMPTY_STATS;
+    if (typeof raw !== "object") return EMPTY_STATS;
+    return raw as CellarStats;
+  });
 
-    if (positivePrices.length === 0) {
-      return { min: 0, max: 500000 };
-    }
+  const priceRange = useMemo(() => ({ min: 0, max: 500000 }), []);
 
-    const min = hasZeroPrice
-      ? 0
-      : Math.floor(Math.min(...positivePrices) / 10000) * 10000;
-    const max = Math.ceil(Math.max(...positivePrices) / 10000) * 10000;
-    return { min, max: Math.max(max, 100000) };
-  }, [wines]);
-
-  const [selectedPriceFilter, setSelectedPriceFilter] =
-    useState<PriceRange | null>(null);
   const priceFilter = useMemo(() => {
-    const active = selectedPriceFilter ?? priceRange;
-    const min = Math.max(priceRange.min, active.min);
-    const max = Math.min(priceRange.max, active.max);
-    return { min: Math.min(min, max), max: Math.max(min, max) };
-  }, [priceRange, selectedPriceFilter]);
+    const minRaw = Number(priceMin || priceRange.min);
+    const maxRaw = Number(priceMax || priceRange.max);
+    const min = Number.isFinite(minRaw) ? minRaw : priceRange.min;
+    const max = Number.isFinite(maxRaw) ? maxRaw : priceRange.max;
+    const clampedMin = Math.max(priceRange.min, Math.min(min, priceRange.max));
+    const clampedMax = Math.max(priceRange.min, Math.min(max, priceRange.max));
+    return {
+      min: Math.min(clampedMin, clampedMax),
+      max: Math.max(clampedMin, clampedMax),
+    };
+  }, [priceMin, priceMax, priceRange]);
 
   function handlePreventSliderTrackClick(
     e: React.PointerEvent<HTMLSpanElement>
@@ -142,138 +213,230 @@ export function CellarListClient({
   const [confirmingWine, setConfirmingWine] = useState<CellarWine | null>(null);
   const [showStats, setShowStats] = useState(false);
 
+  useEffect(() => {
+    setSearchTerm(q);
+  }, [q]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadCountries() {
+      const res = await fetch(`/api/h/${houseId}/cellar/countries`, {
+        cache: "force-cache",
+      });
+      const json = (await res.json()) as
+        | { countries: string[] }
+        | { error: string };
+      if (!res.ok || "error" in json) return;
+      if (isCancelled) return;
+      setCountries(json.countries);
+    }
+
+    void loadCountries();
+    return () => {
+      isCancelled = true;
+    };
+  }, [houseId]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void setQ(deferredSearchTerm.trim());
+    }, 250);
+    return () => clearTimeout(t);
+  }, [deferredSearchTerm, setQ]);
+
+  const fetchHouseStats = useCallback(
+    async function fetchHouseStats() {
+      const res = await fetch(`/api/h/${houseId}/cellar/stats`, {
+        cache: "no-store",
+      });
+      const json = (await res.json()) as
+        | { stats?: unknown | null }
+        | { error: string };
+      if (!res.ok || "error" in json) return;
+      if (json.stats) setStats(json.stats as CellarStats);
+    },
+    [houseId]
+  );
+
+  useEffect(() => {
+    void fetchHouseStats();
+  }, [fetchHouseStats]);
+
   async function handleOpenBottleAndClose(formData: FormData) {
     await openBottleAction(formData);
     setConfirmingWine(null);
+    // 서버 상태 변경(재고) 반영
+    void fetchFirstPage();
+    void fetchHouseStats();
   }
 
-  const inStockWines = useMemo(
-    () => wines.filter((w) => w.stockQty > 0),
-    [wines]
-  );
-  const totalBottles = useMemo(
-    () => inStockWines.reduce((acc, w) => acc + w.stockQty, 0),
-    [inStockWines]
-  );
-  const totalValue = useMemo(
+  const onHandBottles = stats.onHand?.bottles ?? 0;
+  const onHandValue = stats.onHand?.value ?? 0;
+  const consumedBottles = stats.consumed?.bottles ?? 0;
+  const consumedValue = stats.consumed?.value ?? 0;
+  const totalPurchasedBottles = stats.total?.bottles ?? 0;
+  const totalPurchasedValue = stats.total?.value ?? 0;
+
+  const statsByType = stats.onHand?.byType ?? EMPTY_STATS.onHand.byType;
+  const statsByCountry =
+    stats.onHand?.byCountry ?? EMPTY_STATS.onHand.byCountry;
+
+  // 분포(차트) 계산은 보유 병수 기준
+  const totalBottles = onHandBottles;
+
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const queryKey = useMemo(
     () =>
-      inStockWines.reduce((acc, w) => acc + w.stockQty * w.avgPurchasePrice, 0),
-    [inStockWines]
+      JSON.stringify({
+        q,
+        stockFilter,
+        typeFilter,
+        countryFilter,
+        sortMode,
+        priceMin,
+        priceMax,
+      }),
+    [q, stockFilter, typeFilter, countryFilter, sortMode, priceMin, priceMax]
+  );
+  const initialKeyRef = useRef<string | null>(null);
+
+  const fetchFirstPage = useCallback(
+    async function fetchFirstPage() {
+      setIsFetching(true);
+      try {
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (stockFilter) params.set("stock", stockFilter);
+        if (typeFilter) params.set("type", typeFilter);
+        if (countryFilter) params.set("country", countryFilter);
+        if (sortMode) params.set("sort", sortMode);
+        if (priceMin) params.set("priceMin", priceMin);
+        if (priceMax) params.set("priceMax", priceMax);
+        params.set("limit", "20");
+        // 대시보드는 하우스 전체 요약(필터 무관) → 목록 로딩에는 통계를 끼워넣지 않는다.
+        params.set("includeStats", "0");
+
+        const res = await fetch(
+          `/api/h/${houseId}/cellar?${params.toString()}`,
+          {
+            cache: "no-store",
+          }
+        );
+        const json = (await res.json()) as
+          | {
+              wines: CellarWine[];
+              nextCursor: string | null;
+              hasMore: boolean;
+              stats?: unknown | null;
+            }
+          | { error: string };
+
+        if (!res.ok || "error" in json) return;
+
+        setWines(json.wines);
+        setNextCursor(json.nextCursor);
+        setHasMore(json.hasMore);
+        // stats는 별도 호출로 갱신 (필터 변경과 무관)
+      } finally {
+        setIsFetching(false);
+      }
+    },
+    [
+      countryFilter,
+      houseId,
+      priceMax,
+      priceMin,
+      q,
+      sortMode,
+      stockFilter,
+      typeFilter,
+    ]
   );
 
-  const statsByType = useMemo(() => {
-    const stats = { red: 0, white: 0, sparkling: 0, others: 0 };
-    for (const w of inStockWines) {
-      const t = (w.type ?? "").toLowerCase();
-      if (t === "red") stats.red += w.stockQty;
-      else if (t === "white") stats.white += w.stockQty;
-      else if (t === "sparkling") stats.sparkling += w.stockQty;
-      else stats.others += w.stockQty;
-    }
-    return stats;
-  }, [inStockWines]);
+  const fetchMore = useCallback(
+    async function fetchMore() {
+      if (!hasMore) return;
+      if (!nextCursor) return;
+      if (isFetchingMore) return;
 
-  const statsByCountry = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const w of inStockWines) {
-      const key = w.country?.trim() || "기타";
-      counts[key] = (counts[key] ?? 0) + w.stockQty;
-    }
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [inStockWines]);
+      setIsFetchingMore(true);
+      try {
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (stockFilter) params.set("stock", stockFilter);
+        if (typeFilter) params.set("type", typeFilter);
+        if (countryFilter) params.set("country", countryFilter);
+        if (sortMode) params.set("sort", sortMode);
+        if (priceMin) params.set("priceMin", priceMin);
+        if (priceMax) params.set("priceMax", priceMax);
+        params.set("limit", "20");
+        params.set("cursor", nextCursor);
+        params.set("includeStats", "0");
 
-  // 국가 목록 추출 (필터용)
-  const countries = useMemo(() => {
-    const countrySet = new Set<string>();
-    wines.forEach((w) => {
-      if (w.country?.trim()) {
-        countrySet.add(w.country.trim());
+        const res = await fetch(
+          `/api/h/${houseId}/cellar?${params.toString()}`,
+          {
+            cache: "no-store",
+          }
+        );
+        const json = (await res.json()) as
+          | {
+              wines: CellarWine[];
+              nextCursor: string | null;
+              hasMore: boolean;
+            }
+          | { error: string };
+
+        if (!res.ok || "error" in json) return;
+
+        setWines((prev) => [...prev, ...json.wines]);
+        setNextCursor(json.nextCursor);
+        setHasMore(json.hasMore);
+      } finally {
+        setIsFetchingMore(false);
       }
-    });
-    return Array.from(countrySet).sort();
-  }, [wines]);
+    },
+    [
+      countryFilter,
+      hasMore,
+      houseId,
+      isFetchingMore,
+      nextCursor,
+      priceMax,
+      priceMin,
+      q,
+      sortMode,
+      stockFilter,
+      typeFilter,
+    ]
+  );
 
-  const filteredWines = useMemo(() => {
-    let result = wines;
-
-    if (stockFilter === "in_stock")
-      result = result.filter((w) => w.stockQty > 0);
-    else if (stockFilter === "out_of_stock")
-      result = result.filter((w) => w.stockQty === 0);
-
-    if (typeFilter !== "ALL") {
-      result = result.filter(
-        (w) => (w.type ?? "").toLowerCase() === typeFilter.toLowerCase()
-      );
+  useEffect(() => {
+    if (initialKeyRef.current === null) {
+      initialKeyRef.current = queryKey;
+      return;
     }
+    void fetchFirstPage();
+  }, [fetchFirstPage, queryKey]);
 
-    if (countryFilter !== "ALL") {
-      result = result.filter((w) => w.country?.trim() === countryFilter);
-    }
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    if (!hasMore) return;
 
-    // 가격 범위 필터링
-    result = result.filter((w) => {
-      const price = w.avgPurchasePrice;
-      // 0원인 경우는 priceFilter.min이 0일 때만 포함
-      if (price === 0) {
-        return priceFilter.min === 0;
-      }
-      return price >= priceFilter.min && price <= priceFilter.max;
-    });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const isVisible = entries.some((e) => e.isIntersecting);
+        if (!isVisible) return;
+        void fetchMore();
+      },
+      { rootMargin: "1200px 0px" }
+    );
 
-    if (searchTerm.trim()) {
-      const lower = searchTerm.trim().toLowerCase();
-      result = result.filter((w) => {
-        const hay = [
-          w.name ?? "",
-          w.producer ?? "",
-          w.region ?? "",
-          w.country ?? "",
-        ]
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(lower);
-      });
-    }
-
-    const sorted = [...result].sort((a, b) => {
-      switch (sortMode) {
-        case "price_desc":
-          return (b.avgPurchasePrice ?? 0) - (a.avgPurchasePrice ?? 0);
-        case "price_asc":
-          return (a.avgPurchasePrice ?? 0) - (b.avgPurchasePrice ?? 0);
-        case "rating_desc":
-          return (b.rating ?? 0) - (a.rating ?? 0);
-        case "vintage_asc":
-          // 오름차순: null은 뒤로, 숫자는 작은 것부터
-          if (a.vintage === null && b.vintage === null) return 0;
-          if (a.vintage === null) return 1;
-          if (b.vintage === null) return -1;
-          return a.vintage - b.vintage;
-        case "vintage_desc":
-          // 내림차순: null은 뒤로, 숫자는 큰 것부터
-          if (a.vintage === null && b.vintage === null) return 0;
-          if (a.vintage === null) return 1;
-          if (b.vintage === null) return -1;
-          return b.vintage - a.vintage;
-        case "recent":
-          return 0; // 서버에서 정렬 정보를 안 들고오므로(디자인만 맞추기) 그대로 둠
-        case "stock_desc":
-        default:
-          return (b.stockQty ?? 0) - (a.stockQty ?? 0);
-      }
-    });
-
-    return sorted;
-  }, [
-    wines,
-    searchTerm,
-    stockFilter,
-    typeFilter,
-    countryFilter,
-    priceFilter,
-    sortMode,
-  ]);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fetchMore, hasMore]);
 
   return (
     <>
@@ -299,10 +462,10 @@ export function CellarListClient({
             <div className="flex justify-between items-end mb-5 border-b border-stone-100 pb-5">
               <div>
                 <p className="text-[11px] text-stone-400 font-extrabold uppercase tracking-widest mb-1.5">
-                  Total Value
+                  보유 가치
                 </p>
                 <p className="text-3xl font-bold text-stone-800 tracking-tight">
-                  {totalValue.toLocaleString()}
+                  {onHandValue.toLocaleString()}
                   <span className="text-lg font-medium text-stone-400 ml-1">
                     원
                   </span>
@@ -310,14 +473,39 @@ export function CellarListClient({
               </div>
               <div className="text-right">
                 <p className="text-[11px] text-stone-400 font-extrabold uppercase tracking-widest mb-1.5">
-                  Bottles
+                  보유 병수
                 </p>
                 <p className="text-3xl font-bold text-wine-600 tracking-tight">
-                  {totalBottles}
+                  {onHandBottles}
                   <span className="text-lg font-medium text-wine-300 ml-1">
                     병
                   </span>
                 </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="rounded-2xl bg-stone-50 border border-stone-100 px-4 py-3">
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-stone-400">
+                  마신 가치
+                </div>
+                <div className="mt-1 text-sm font-bold text-stone-800">
+                  {consumedValue.toLocaleString()}원{" "}
+                  <span className="text-stone-400 font-semibold">
+                    · {consumedBottles}병
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-stone-50 border border-stone-100 px-4 py-3">
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-stone-400">
+                  누적 구매
+                </div>
+                <div className="mt-1 text-sm font-bold text-stone-800">
+                  {totalPurchasedValue.toLocaleString()}원{" "}
+                  <span className="text-stone-400 font-semibold">
+                    · {totalPurchasedBottles}병
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -406,18 +594,23 @@ export function CellarListClient({
                 국가
               </span>
               <div className="relative group">
-                <Select value={countryFilter} onValueChange={setCountryFilter}>
+                <Select
+                  value={countryFilter ? countryFilter : "ALL"}
+                  onValueChange={(v) =>
+                    void setCountryFilter(v === "ALL" ? "" : v)
+                  }
+                >
                   <SelectTrigger
                     size="sm"
                     className={[
                       "rounded-full px-3 py-2 text-xs font-bold shadow-sm hover:shadow-md border transition-all",
                       "data-[size=sm]:h-auto",
-                      countryFilter === "ALL"
+                      !countryFilter
                         ? "bg-white text-stone-700 border-stone-200"
                         : "bg-pink-50 text-pink-700 border-pink-200",
                     ].join(" ")}
                   >
-                    <SelectValue />
+                    <SelectValue placeholder="전체" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">전체</SelectItem>
@@ -472,7 +665,13 @@ export function CellarListClient({
                 value={[priceFilter.min, priceFilter.max]}
                 onValueChange={(values) => {
                   const [min, max] = values;
-                  setSelectedPriceFilter({ min, max });
+                  if (min === priceRange.min && max === priceRange.max) {
+                    void setPriceMin("");
+                    void setPriceMax("");
+                    return;
+                  }
+                  void setPriceMin(String(min));
+                  void setPriceMax(String(max));
                 }}
                 onPointerDownCapture={handlePreventSliderTrackClick}
                 className={[
@@ -492,16 +691,16 @@ export function CellarListClient({
       <div className="px-5 flex items-center justify-between mb-4 border-t border-stone-200/40 pt-4">
         <div className="flex p-1 bg-stone-200/50 rounded-xl backdrop-blur-sm">
           {[
-            { label: "보유 중", value: "in_stock" as const },
+            { label: "재고 있음", value: "in_stock" as const },
             { label: "전체", value: "all" as const },
-            { label: "빈 병", value: "out_of_stock" as const },
+            { label: "재고 없음", value: "out_of_stock" as const },
           ].map((tab) => {
             const isActive = stockFilter === tab.value;
             return (
               <button
                 key={tab.value}
                 type="button"
-                onClick={() => setStockFilter(tab.value)}
+                onClick={() => void setStockFilter(tab.value)}
                 className={[
                   "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-300",
                   isActive
@@ -531,7 +730,8 @@ export function CellarListClient({
           </SelectTrigger>
           <SelectContent align="end">
             <SelectItem value="stock_desc">재고 많은 순</SelectItem>
-            <SelectItem value="recent">최근 등록 순</SelectItem>
+            <SelectItem value="purchase_desc">최근 구매 (최신)</SelectItem>
+            <SelectItem value="purchase_asc">최근 구매 (오래된)</SelectItem>
             <SelectItem value="price_desc">높은 가격 순</SelectItem>
             <SelectItem value="price_asc">낮은 가격 순</SelectItem>
             <SelectItem value="rating_desc">평점 높은 순</SelectItem>
@@ -542,13 +742,13 @@ export function CellarListClient({
       </div>
 
       <div className="px-5 pb-24 space-y-4">
-        {filteredWines.length === 0 ? (
+        {wines.length === 0 ? (
           <div className="text-center py-20 px-6 animate-fade-in-up">
             <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-inner">
               🤷‍♂️
             </div>
             <p className="text-stone-400 mb-2 font-medium">
-              조건에 맞는 와인이 없어요.
+              {isFetching ? "불러오는 중..." : "조건에 맞는 와인이 없어요."}
             </p>
             {stockFilter === "in_stock" ? (
               <p className="text-sm text-stone-400">
@@ -557,7 +757,7 @@ export function CellarListClient({
             ) : null}
           </div>
         ) : (
-          filteredWines.map((wine, index) => {
+          wines.map((wine, index) => {
             const isOutOfStock = wine.stockQty === 0;
             const typeLower = (wine.type ?? "").toLowerCase();
             const accent =
@@ -573,132 +773,149 @@ export function CellarListClient({
               <div
                 key={wine.id}
                 className="animate-fade-in-up"
-                style={{ animationDelay: `${index * 50}ms` }}
+                style={
+                  index < 20 ? { animationDelay: `${index * 50}ms` } : undefined
+                }
               >
-                <Card
-                  onClick={() => router.push(`/h/${houseId}/wine/${wine.id}`)}
-                  className={[
-                    "relative flex flex-col gap-3 group overflow-hidden",
-                    isOutOfStock
-                      ? "opacity-70 grayscale-[0.8] hover:opacity-100 hover:grayscale-0"
-                      : "",
-                  ].join(" ")}
-                >
-                  {!isOutOfStock ? (
-                    <div
-                      className={`absolute left-0 top-0 bottom-0 w-1 ${accent} opacity-0 group-hover:opacity-100 transition-opacity`}
-                    />
-                  ) : null}
-
-                  <div className="flex items-center gap-4">
-                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white flex-shrink-0 shadow-md group-hover:shadow-lg transition-all transform group-hover:scale-[1.02] overflow-hidden">
-                      <Image
-                        src={
-                          wine.thumbnailUrl ?? getPlaceholderImageUrl(wine.type)
-                        }
-                        alt={wine.name ?? wine.producer}
-                        fill
-                        className="object-contain"
-                        sizes="80px"
-                        loading="eager"
-                      />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-3">
-                        <h3 className="font-bold text-stone-900 text-[17px] leading-tight truncate tracking-tight">
-                          {wine.producer}
-                        </h3>
-                        <span className="flex-shrink-0 text-sm font-extrabold text-stone-900">
-                          {formatPriceManWon(wine.avgPurchasePrice)}
-                        </span>
-                      </div>
-
-                      <div className="mt-0.5 flex items-baseline gap-2 min-w-0">
-                        <p className="text-stone-600 text-[15px] font-medium truncate min-w-0">
-                          {wine.name ?? "-"}
-                        </p>
-                        <span className="flex-shrink-0 text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">
-                          {wine.vintage ? String(wine.vintage) : "NV"}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 flex items-center gap-2 text-xs font-bold min-w-0">
-                        <WineTypeBadge type={wine.type} />
-                        <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
-                          {wine.country?.trim() || "국가 미상"}
-                        </span>
-                        {wine.region ? (
-                          <span className="truncate text-[10px] text-stone-400 font-semibold min-w-0">
-                            {wine.region}
-                          </span>
-                        ) : null}
-                        {wine.rating ? (
-                          <span className="ml-auto flex items-center gap-1 text-amber-500 flex-shrink-0">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="currentColor"
-                              className="w-3.5 h-3.5"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                            {Number(wine.rating).toFixed(1)}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col items-center justify-center gap-2 flex-shrink-0">
+                <Link href={`/h/${houseId}/wine/${wine.id}`} className="block">
+                  <Card
+                    className={[
+                      "relative flex flex-col gap-3 group overflow-hidden",
+                      isOutOfStock
+                        ? "opacity-70 grayscale-[0.8] hover:opacity-100 hover:grayscale-0"
+                        : "",
+                    ].join(" ")}
+                  >
+                    {!isOutOfStock ? (
                       <div
-                        className={[
-                          "w-12 h-12 rounded-full flex flex-col items-center justify-center shadow-sm border",
-                          isOutOfStock
-                            ? "bg-stone-50 text-stone-400 border-stone-100"
-                            : "bg-wine-50 text-wine-700 border-wine-100",
-                        ].join(" ")}
-                      >
-                        <span className="text-lg font-extrabold leading-none">
-                          {wine.stockQty}
-                        </span>
-                        <span className="text-[9px] font-bold tracking-wider opacity-60">
-                          병
-                        </span>
+                        className={`absolute left-0 top-0 bottom-0 w-1 ${accent} opacity-0 group-hover:opacity-100 transition-opacity`}
+                      />
+                    ) : null}
+
+                    <div className="flex items-center gap-4">
+                      <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white flex-shrink-0 shadow-md group-hover:shadow-lg transition-all transform group-hover:scale-[1.02] overflow-hidden">
+                        <Image
+                          src={
+                            wine.thumbnailUrl ??
+                            getPlaceholderImageUrl(wine.type)
+                          }
+                          alt={wine.name ?? wine.producer}
+                          fill
+                          className="object-contain"
+                          sizes="80px"
+                          priority={index < 6}
+                        />
                       </div>
 
-                      {!isOutOfStock ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmingWine(wine);
-                          }}
-                          className="w-12 h-12 rounded-full bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 hover:border-stone-300 shadow-sm flex flex-col items-center justify-center transition-all active:scale-95"
-                          title="1병 마시기"
-                          aria-label="1병 마시기"
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="font-bold text-stone-900 text-[17px] leading-tight truncate tracking-tight">
+                            {wine.producer}
+                          </h3>
+                          <span className="flex-shrink-0 text-sm font-extrabold text-stone-900">
+                            {formatPriceManWon(wine.avgPurchasePrice)}
+                          </span>
+                        </div>
+
+                        <div className="mt-0.5 flex items-baseline gap-2 min-w-0">
+                          <p className="text-stone-600 text-[15px] font-medium truncate min-w-0">
+                            {wine.name ?? "-"}
+                          </p>
+                          <span className="flex-shrink-0 text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">
+                            {wine.vintage ? String(wine.vintage) : "NV"}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-2 text-xs font-bold min-w-0">
+                          <WineTypeBadge type={wine.type} />
+                          <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                            {wine.country?.trim() || "국가 미상"}
+                          </span>
+                          {wine.region ? (
+                            <span className="truncate text-[10px] text-stone-400 font-semibold min-w-0">
+                              {wine.region}
+                            </span>
+                          ) : null}
+                          {wine.rating ? (
+                            <span className="ml-auto flex items-center gap-1 text-amber-500 flex-shrink-0">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                className="w-3.5 h-3.5"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                              {Number(wine.rating).toFixed(1)}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-center justify-center gap-2 flex-shrink-0">
+                        <div
+                          className={[
+                            "w-12 h-12 rounded-full flex flex-col items-center justify-center shadow-sm border",
+                            isOutOfStock
+                              ? "bg-stone-50 text-stone-400 border-stone-100"
+                              : "bg-wine-50 text-wine-700 border-wine-100",
+                          ].join(" ")}
                         >
-                          <span className="text-sm font-extrabold leading-none">
-                            -1
+                          <span className="text-lg font-extrabold leading-none">
+                            {wine.stockQty}
                           </span>
-                          <span className="text-[9px] font-bold text-stone-400 mt-1">
-                            마시기
+                          <span className="text-[9px] font-bold tracking-wider opacity-60">
+                            병
                           </span>
-                        </button>
-                      ) : (
-                        <span className="w-12 h-12 rounded-2xl bg-stone-50 border border-stone-100 text-[10px] font-extrabold text-stone-400 flex items-center justify-center tracking-widest">
-                          품절
-                        </span>
-                      )}
+                        </div>
+
+                        {!isOutOfStock ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setConfirmingWine(wine);
+                            }}
+                            className="w-12 h-12 rounded-full bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 hover:border-stone-300 shadow-sm flex flex-col items-center justify-center transition-all active:scale-95"
+                            title="1병 마시기"
+                            aria-label="1병 마시기"
+                          >
+                            <span className="text-sm font-extrabold leading-none">
+                              -1
+                            </span>
+                            <span className="text-[9px] font-bold text-stone-400 mt-1">
+                              마시기
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="w-12 h-12 rounded-2xl bg-stone-50 border border-stone-100 text-[10px] font-extrabold text-stone-400 flex items-center justify-center tracking-widest">
+                            품절
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </Card>
+                  </Card>
+                </Link>
               </div>
             );
           })
+        )}
+        {hasMore ? (
+          <div className="pt-2">
+            <div ref={loadMoreRef} className="h-10" aria-hidden="true" />
+            <div className="text-center text-xs font-bold text-stone-400">
+              {isFetchingMore
+                ? "더 불러오는 중..."
+                : "스크롤하면 더 불러옵니다"}
+            </div>
+          </div>
+        ) : (
+          <div ref={loadMoreRef} className="h-1" aria-hidden="true" />
         )}
       </div>
 
@@ -746,12 +963,13 @@ export function CellarListClient({
               <form action={handleOpenBottleAndClose} className="w-full">
                 <input type="hidden" name="houseId" value={houseId} />
                 <input type="hidden" name="wineId" value={confirmingWine.id} />
-                <button
+                <ActionButton
                   type="submit"
                   className="inline-flex items-center justify-center rounded-full px-6 py-4 text-sm font-bold bg-gradient-to-br from-wine-700 to-wine-900 text-white shadow-lg shadow-wine-200 hover:shadow-wine-300 hover:brightness-105 w-full"
+                  pendingText="처리 중..."
                 >
                   확인
-                </button>
+                </ActionButton>
               </form>
             </div>
           </div>

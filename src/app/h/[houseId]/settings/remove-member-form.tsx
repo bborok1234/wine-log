@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 
-import { Button } from "@/components/ui";
+import { ActionButton } from "@/components/action-button";
 
 interface RemoveMemberFormProps {
   houseId: string;
@@ -25,13 +25,14 @@ export function RemoveMemberForm({
     <form action={removeMember} onSubmit={handleSubmit}>
       <input type="hidden" name="houseId" value={houseId} />
       <input type="hidden" name="userId" value={userId} />
-      <Button
+      <ActionButton
         type="submit"
         variant="secondary"
         className="!py-2 !px-3 !text-xs"
+        pendingText="삭제 중..."
       >
         삭제
-      </Button>
+      </ActionButton>
     </form>
   );
 }

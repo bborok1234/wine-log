@@ -1,12 +1,46 @@
 import { Layout } from "@/components/layout";
 import { getFlash } from "@/lib/flash";
 import { requireAuthedUser, requireHouseAccess } from "@/lib/house";
-import { resolveWineImageUrl } from "@/lib/storage-image";
+import { resolveWineImageUrls } from "@/lib/storage-image";
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 
 import { openBottle } from "./actions";
 import { AiRecommendationFab } from "./ai-recommendation-fab";
 import { CellarListClient } from "./cellar-list-client";
+
+function normalizeSort(value: unknown) {
+  if (value === "stock_desc") return "stock_desc";
+  if (value === "purchase_desc") return "purchase_desc";
+  if (value === "purchase_asc") return "purchase_asc";
+  if (value === "price_desc") return "price_desc";
+  if (value === "price_asc") return "price_asc";
+  if (value === "rating_desc") return "rating_desc";
+  if (value === "vintage_asc") return "vintage_asc";
+  if (value === "vintage_desc") return "vintage_desc";
+  return "stock_desc";
+}
+
+function normalizeStock(value: unknown) {
+  if (value === "in_stock") return "in_stock";
+  if (value === "out_of_stock") return "out_of_stock";
+  if (value === "all") return "all";
+  return "in_stock";
+}
+
+function normalizeType(value: unknown) {
+  if (typeof value !== "string") return "ALL";
+  const v = value.toLowerCase();
+  if (v === "all") return "ALL";
+  if (v === "red") return "red";
+  if (v === "white") return "white";
+  if (v === "sparkling") return "sparkling";
+  if (v === "rose") return "rose";
+  if (v === "dessert") return "dessert";
+  if (v === "fortified") return "fortified";
+  if (v === "other") return "other";
+  return "ALL";
+}
 
 export default async function CellarPage({
   params,
@@ -15,33 +49,95 @@ export default async function CellarPage({
   params: Promise<{ houseId: string }>;
   searchParams?: Promise<{
     q?: string;
+    stock?: string;
+    type?: string;
+    country?: string;
+    sort?: string;
+    priceMin?: string;
+    priceMax?: string;
   }>;
 }) {
   const { houseId } = await params;
   const sp = searchParams ? await searchParams : {};
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
+  const stock = normalizeStock(sp.stock);
+  const type = normalizeType(sp.type);
+  const country = typeof sp.country === "string" ? sp.country.trim() : "";
+  const sort = normalizeSort(sp.sort);
+  const priceMin = Number(typeof sp.priceMin === "string" ? sp.priceMin : "");
+  const priceMax = Number(typeof sp.priceMax === "string" ? sp.priceMax : "");
   const flash = await getFlash();
 
   const supabase = await createClient();
   await requireAuthedUser(supabase);
   const house = await requireHouseAccess(supabase, houseId);
 
-  const wineQuery = supabase
+  let wineQuery = supabase
     .from("wines")
     .select(
       "id,producer,name,vintage,country,region,type,stock_qty,avg_purchase_price,rating,label_photo_urls,created_at"
     )
     .eq("house_id", houseId);
 
-  const wines = await wineQuery;
+  if (stock === "in_stock") wineQuery = wineQuery.gt("stock_qty", 0);
+  else if (stock === "out_of_stock") wineQuery = wineQuery.eq("stock_qty", 0);
+  if (type !== "ALL") wineQuery = wineQuery.eq("type", type);
+  if (country) wineQuery = wineQuery.eq("country", country);
+  if (Number.isFinite(priceMin) && priceMin > 0)
+    wineQuery = wineQuery.gte("avg_purchase_price", priceMin);
+  if (Number.isFinite(priceMax) && priceMax > 0)
+    wineQuery = wineQuery.lte("avg_purchase_price", priceMax);
+  if (q) {
+    const escaped = q.replaceAll(",", "\\,");
+    wineQuery = wineQuery.or(
+      `producer.ilike.%${escaped}%,name.ilike.%${escaped}%,region.ilike.%${escaped}%,country.ilike.%${escaped}%`
+    );
+  }
+  if (sort === "purchase_desc") {
+    wineQuery = wineQuery
+      .order("last_purchased_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false });
+  } else if (sort === "purchase_asc") {
+    wineQuery = wineQuery
+      .order("last_purchased_at", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: false });
+  } else if (sort === "price_desc") {
+    wineQuery = wineQuery
+      .order("avg_purchase_price", { ascending: false })
+      .order("id", { ascending: false });
+  } else if (sort === "price_asc") {
+    wineQuery = wineQuery
+      .order("avg_purchase_price", { ascending: true })
+      .order("id", { ascending: true });
+  } else if (sort === "rating_desc") {
+    wineQuery = wineQuery
+      .order("rating", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false });
+  } else if (sort === "vintage_asc") {
+    wineQuery = wineQuery
+      .order("vintage", { ascending: true, nullsFirst: false })
+      .order("id", { ascending: true });
+  } else if (sort === "vintage_desc") {
+    wineQuery = wineQuery
+      .order("vintage", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false });
+  } else {
+    wineQuery = wineQuery
+      .order("stock_qty", { ascending: false })
+      .order("id", { ascending: false });
+  }
+
+  const pageSize = 20;
+  const wines = await wineQuery.range(0, pageSize); // fetch pageSize+1
   const winesData = wines.data ?? [];
-  const signedThumbs = await Promise.all(
-    winesData.map((w) =>
-      resolveWineImageUrl(supabase, w.label_photo_urls?.[0] ?? null)
-    )
+  const pageRows = winesData.slice(0, pageSize);
+  const hasMore = winesData.length > pageSize;
+  const signedThumbs = await resolveWineImageUrls(
+    supabase,
+    pageRows.map((w) => w.label_photo_urls?.[0] ?? null)
   );
 
-  const cellarWines = winesData.map((w, idx) => ({
+  const cellarWines = pageRows.map((w, idx) => ({
     id: w.id,
     producer: w.producer,
     name: w.name,
@@ -54,6 +150,18 @@ export default async function CellarPage({
     rating: w.rating,
     thumbnailUrl: signedThumbs[idx] ?? null,
   }));
+
+  const stats = await (supabase as any).rpc("rpc_cellar_stats", {
+    p_house_id: houseId,
+    // 대시보드 통계는 "하우스 전체 요약" (필터 무관)
+    p_q: null,
+    p_stock: "all",
+    p_consumed_only: false,
+    p_type: null,
+    p_country: null,
+    p_price_min: null,
+    p_price_max: null,
+  });
 
   return (
     <Layout
@@ -70,7 +178,7 @@ export default async function CellarPage({
       }
       actions={
         <div className="flex items-center gap-2">
-          <a
+          <Link
             href={`/h/${houseId}/settings`}
             className="p-2.5 rounded-full hover:bg-stone-100 transition-colors text-stone-400"
             title="설정"
@@ -94,7 +202,7 @@ export default async function CellarPage({
                 d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
               />
             </svg>
-          </a>
+          </Link>
         </div>
       }
       floatingActionButton={<AiRecommendationFab houseId={houseId} q={q} />}
@@ -109,8 +217,17 @@ export default async function CellarPage({
 
       <CellarListClient
         houseId={houseId}
-        initialSearch={q}
-        wines={cellarWines}
+        initialPage={{
+          wines: cellarWines,
+          nextCursor: hasMore
+            ? Buffer.from(
+                JSON.stringify({ offset: pageSize }),
+                "utf8"
+              ).toString("base64url")
+            : null,
+          hasMore,
+          stats: stats.data ?? null,
+        }}
         openBottleAction={openBottle}
       />
     </Layout>

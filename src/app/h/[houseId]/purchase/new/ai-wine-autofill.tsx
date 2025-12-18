@@ -266,8 +266,11 @@ export function AiWineAutofill({
       ) : (
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isAnalyzingImage}
+          onClick={() => {
+            if (isAnalyzingImage) return;
+            fileInputRef.current?.click();
+          }}
+          disabled={isAnalyzingImage || isParsing}
           className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-3xl py-4 shadow-lg shadow-indigo-200 active:scale-[0.98] transition-all hover:brightness-110"
         >
           {isAnalyzingImage ? (
@@ -338,10 +341,13 @@ export function AiWineAutofill({
         <button
           type="button"
           className="absolute right-3 bottom-3 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors disabled:opacity-60"
-          onClick={handleAutoFillFromText}
-          disabled={isParsing}
+          onClick={() => {
+            if (isParsing) return;
+            void handleAutoFillFromText();
+          }}
+          disabled={isParsing || isAnalyzingImage}
         >
-          {isParsing ? "..." : "AI 분석"}
+          {isParsing ? "분석 중..." : "AI 분석"}
         </button>
       </div>
 

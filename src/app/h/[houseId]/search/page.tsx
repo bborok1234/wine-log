@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Layout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
 import { requireAuthedUser, requireHouseAccess } from "@/lib/house";
@@ -58,7 +60,7 @@ export default async function SearchPage({
         </div>
       }
       actions={
-        <a
+        <Link
           href={`/h/${houseId}/purchase/new?q=${encodeURIComponent(q)}`}
           className="p-2.5 rounded-full hover:bg-stone-100 transition-colors text-wine-700"
           title="구매 추가"
@@ -75,7 +77,7 @@ export default async function SearchPage({
               clipRule="evenodd"
             />
           </svg>
-        </a>
+        </Link>
       }
     >
       <div className="px-5 pt-6 space-y-4 pb-24">
@@ -102,7 +104,7 @@ export default async function SearchPage({
               className="animate-fade-in-up"
               style={{ animationDelay: `${index * 25}ms` }}
             >
-              <a href={`/h/${houseId}/wine/${wine.id}`}>
+              <Link href={`/h/${houseId}/wine/${wine.id}`}>
                 <Card className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="font-bold text-stone-900 truncate">
@@ -137,7 +139,7 @@ export default async function SearchPage({
                     </div>
                   </div>
                 </Card>
-              </a>
+              </Link>
             </div>
           ))
         ) : (
@@ -146,9 +148,11 @@ export default async function SearchPage({
               결과가 없어요. 새 와인으로 바로 추가할까요?
             </div>
             <div className="mt-4">
-              <a href={`/h/${houseId}/purchase/new?q=${encodeURIComponent(q)}`}>
+              <Link
+                href={`/h/${houseId}/purchase/new?q=${encodeURIComponent(q)}`}
+              >
                 <Button fullWidth>새 와인 + 구매 추가</Button>
-              </a>
+              </Link>
             </div>
           </Card>
         )}

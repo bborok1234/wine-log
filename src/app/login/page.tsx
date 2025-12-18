@@ -1,5 +1,6 @@
+import { ActionButton } from "@/components/action-button";
 import { Layout } from "@/components/layout";
-import { Button, Card, Input } from "@/components/ui";
+import { Card, Input } from "@/components/ui";
 import { logger } from "@/lib/logger";
 
 import { login, signup } from "./actions";
@@ -58,16 +59,21 @@ export default async function LoginPage({
             <Input label="이메일" name="email" type="email" required />
             <Input label="비밀번호" name="password" type="password" required />
             <div className="pt-2 flex gap-3">
-              <Button className="flex-1" formAction={login}>
+              <ActionButton
+                className="flex-1"
+                formAction={login}
+                pendingText="로그인 중..."
+              >
                 로그인
-              </Button>
-              <Button
+              </ActionButton>
+              <ActionButton
                 className="flex-1"
                 variant="secondary"
                 formAction={signup}
+                pendingText="가입 중..."
               >
                 가입
-              </Button>
+              </ActionButton>
             </div>
           </form>
         </Card>
