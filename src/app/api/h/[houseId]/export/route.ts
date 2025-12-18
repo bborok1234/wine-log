@@ -40,6 +40,16 @@ export async function GET(
     if (a.name !== b.name) {
       return a.name.localeCompare(b.name);
     }
+    // vintage 정렬: null은 숫자보다 뒤에 오도록 처리
+    if (a.vintage === null && b.vintage === null) {
+      return 0;
+    }
+    if (a.vintage === null) {
+      return 1; // null은 뒤로
+    }
+    if (b.vintage === null) {
+      return -1; // null은 뒤로
+    }
     return a.vintage - b.vintage;
   });
 

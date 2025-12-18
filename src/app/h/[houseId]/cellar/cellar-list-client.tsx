@@ -20,7 +20,9 @@ type SortMode =
   | "price_desc"
   | "price_asc"
   | "rating_desc"
-  | "recent";
+  | "recent"
+  | "vintage_asc"
+  | "vintage_desc";
 type TypeFilter =
   | "ALL"
   | "red"
@@ -103,10 +105,18 @@ export function CellarListClient({
 
   // 가격 범위 계산
   const priceRange = useMemo(() => {
-    const prices = wines.map((w) => w.avgPurchasePrice).filter((p) => p > 0);
-    if (prices.length === 0) return { min: 0, max: 500000 };
-    const min = Math.floor(Math.min(...prices) / 10000) * 10000;
-    const max = Math.ceil(Math.max(...prices) / 10000) * 10000;
+    const prices = wines.map((w) => w.avgPurchasePrice);
+    const hasZeroPrice = prices.some((p) => p === 0);
+    const positivePrices = prices.filter((p) => p > 0);
+
+    if (positivePrices.length === 0) {
+      return { min: 0, max: 500000 };
+    }
+
+    const min = hasZeroPrice
+      ? 0
+      : Math.floor(Math.min(...positivePrices) / 10000) * 10000;
+    const max = Math.ceil(Math.max(...positivePrices) / 10000) * 10000;
     return { min, max: Math.max(max, 100000) };
   }, [wines]);
 
@@ -204,7 +214,10 @@ export function CellarListClient({
     // 가격 범위 필터링
     result = result.filter((w) => {
       const price = w.avgPurchasePrice;
-      if (price === 0) return false;
+      // 0원인 경우는 priceFilter.min이 0일 때만 포함
+      if (price === 0) {
+        return priceFilter.min === 0;
+      }
       return price >= priceFilter.min && price <= priceFilter.max;
     });
 
@@ -231,6 +244,18 @@ export function CellarListClient({
           return (a.avgPurchasePrice ?? 0) - (b.avgPurchasePrice ?? 0);
         case "rating_desc":
           return (b.rating ?? 0) - (a.rating ?? 0);
+        case "vintage_asc":
+          // 오름차순: null은 뒤로, 숫자는 작은 것부터
+          if (a.vintage === null && b.vintage === null) return 0;
+          if (a.vintage === null) return 1;
+          if (b.vintage === null) return -1;
+          return a.vintage - b.vintage;
+        case "vintage_desc":
+          // 내림차순: null은 뒤로, 숫자는 큰 것부터
+          if (a.vintage === null && b.vintage === null) return 0;
+          if (a.vintage === null) return 1;
+          if (b.vintage === null) return -1;
+          return b.vintage - a.vintage;
         case "recent":
           return 0; // 서버에서 정렬 정보를 안 들고오므로(디자인만 맞추기) 그대로 둠
         case "stock_desc":
@@ -490,34 +515,30 @@ export function CellarListClient({
           })}
         </div>
 
-        <div className="relative group">
-          <select
-            value={sortMode}
-            onChange={(e) => setSortMode(e.target.value as SortMode)}
-            className="appearance-none bg-transparent text-xs font-bold text-stone-500 text-right pr-4 focus:outline-none cursor-pointer hover:text-stone-800 transition-colors"
+        <Select
+          value={sortMode}
+          onValueChange={(v) => setSortMode(v as SortMode)}
+        >
+          <SelectTrigger
+            size="sm"
+            className={[
+              "rounded-full px-3 py-2 text-xs font-bold shadow-sm hover:shadow-md border transition-all",
+              "data-[size=sm]:h-auto",
+              "bg-white text-stone-700 border-stone-200",
+            ].join(" ")}
           >
-            <option value="stock_desc">재고 많은 순</option>
-            <option value="recent">최근 등록 순</option>
-            <option value="price_desc">높은 가격 순</option>
-            <option value="price_asc">낮은 가격 순</option>
-            <option value="rating_desc">평점 높은 순</option>
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-stone-400">
-            <svg
-              className="h-3 w-3"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M19 9l-7 7-7-7"
-              ></path>
-            </svg>
-          </div>
-        </div>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="stock_desc">재고 많은 순</SelectItem>
+            <SelectItem value="recent">최근 등록 순</SelectItem>
+            <SelectItem value="price_desc">높은 가격 순</SelectItem>
+            <SelectItem value="price_asc">낮은 가격 순</SelectItem>
+            <SelectItem value="rating_desc">평점 높은 순</SelectItem>
+            <SelectItem value="vintage_asc">빈티지 오름차순</SelectItem>
+            <SelectItem value="vintage_desc">빈티지 내림차순</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="px-5 pb-24 space-y-4">
