@@ -154,7 +154,7 @@ export function CellarListClient({
     shallow: true,
   });
   const [sortMode, setSortMode] = useQueryState("sort", {
-    defaultValue: "stock_desc",
+    defaultValue: "purchase_desc",
     shallow: true,
   });
   const [priceMin, setPriceMin] = useQueryState("priceMin", {

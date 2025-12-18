@@ -18,7 +18,9 @@ function normalizeSort(value: unknown) {
   if (value === "rating_desc") return "rating_desc";
   if (value === "vintage_asc") return "vintage_asc";
   if (value === "vintage_desc") return "vintage_desc";
-  return "stock_desc";
+  // legacy: removed "recent" (created_at desc) → map to purchase_desc
+  if (value === "recent") return "purchase_desc";
+  return "purchase_desc";
 }
 
 function normalizeStock(value: unknown) {
