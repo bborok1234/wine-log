@@ -7,11 +7,11 @@ import {
   Button,
   Card,
   Input,
-  Select,
   StarRating,
   TextArea,
   WineTypeBadge,
 } from "@/components/ui";
+import { SelectField } from "@/components/ui/select-field";
 import { createClient } from "@/lib/supabase/client";
 
 import { useSommelierAdvice, type SommelierAdvice } from "./ai-sommelier";
@@ -331,12 +331,12 @@ export function WineDetailShell({
                   }
                 />
                 <div className="flex-1">
-                  <Select
+                  <SelectField
                     label="종류"
                     name="type"
                     value={infoForm.type}
-                    onChange={(e) =>
-                      setInfoForm((p) => ({ ...p, type: e.target.value }))
+                    onValueChange={(next) =>
+                      setInfoForm((p) => ({ ...p, type: next }))
                     }
                     options={[
                       { label: "레드", value: "red" },
@@ -401,11 +401,9 @@ export function WineDetailShell({
               ) : null}
 
               <div className="flex items-center gap-2 mt-3 text-stone-500 text-sm font-medium tracking-wide">
-                {wine.vintage ? (
-                  <span className="bg-stone-100 px-2 py-0.5 rounded-md text-stone-600">
-                    {wine.vintage}
-                  </span>
-                ) : null}
+                <span className="bg-stone-100 px-2 py-0.5 rounded-md text-stone-600">
+                  {wine.vintage ?? "NV"}
+                </span>
                 {wine.region ? <span>{wine.region}</span> : null}
                 {wine.country ? (
                   <span className="text-stone-400">| {wine.country}</span>

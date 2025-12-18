@@ -237,7 +237,7 @@ export function Select({
       ) : null}
       <div className="relative">
         <select
-          className={`w-full appearance-none px-5 py-3.5 bg-stone-50 border border-transparent rounded-2xl text-stone-800 focus:bg-white focus:outline-none focus:border-wine-200 focus:ring-4 focus:ring-wine-50 transition-all duration-300 shadow-inner ${className}`}
+          className={`w-full appearance-none px-5 py-3.5 bg-stone-50 border border-transparent rounded-2xl text-stone-800 text-[16px] sm:text-sm focus:bg-white focus:outline-none focus:border-wine-200 focus:ring-4 focus:ring-wine-50 transition-all duration-300 shadow-inner ${className}`}
           {...props}
         >
           {options.map((opt) => (

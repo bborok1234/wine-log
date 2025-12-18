@@ -33,5 +33,3 @@ export async function resolveWineImageUrl(
 
   return data.signedUrl;
 }
-
-

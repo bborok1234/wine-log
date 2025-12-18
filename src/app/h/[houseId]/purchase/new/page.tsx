@@ -1,5 +1,6 @@
 import { Layout } from "@/components/layout";
-import { Button, Card, Input, Select, WineTypeBadge } from "@/components/ui";
+import { Button, Card, Input, WineTypeBadge } from "@/components/ui";
+import { SelectField } from "@/components/ui/select-field";
 import { getFlash } from "@/lib/flash";
 import { requireAuthedUser, requireHouseAccess } from "@/lib/house";
 import { resolveWineImageUrl } from "@/lib/storage-image";
@@ -9,6 +10,19 @@ import { SearchBox } from "@/app/h/[houseId]/search/search-box";
 
 import { savePurchase } from "./actions";
 import { AiWineAutofill } from "./ai-wine-autofill";
+import { AutocompleteInput } from "./autocomplete-input";
+
+function toSortedUniqueByCount(values: Array<string | null | undefined>) {
+  const counts = new Map<string, number>();
+  for (const raw of values) {
+    const v = raw?.trim();
+    if (!v) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"))
+    .map(([v]) => v);
+}
 
 export default async function AddPurchasePage({
   params,
@@ -132,7 +146,7 @@ export default async function AddPurchasePage({
                             <div className="text-stone-500 font-medium truncate">
                               {wine.name}{" "}
                               <span className="text-stone-400">
-                                {wine.vintage}
+                                {wine.vintage ?? "NV"}
                               </span>
                             </div>
                           </div>
@@ -165,6 +179,36 @@ export default async function AddPurchasePage({
           .eq("house_id", houseId)
           .maybeSingle()
       : { data: null, error: null };
+
+  const fieldSuggestions =
+    step === "create"
+      ? await supabase
+          .from("wines")
+          .select("producer,country,region")
+          .eq("house_id", houseId)
+          .limit(2000)
+      : { data: null, error: null as null | { message: string } };
+
+  const producerSuggestions = toSortedUniqueByCount(
+    (fieldSuggestions.data ?? []).map((w) => w.producer)
+  );
+  const countrySuggestions = toSortedUniqueByCount(
+    (fieldSuggestions.data ?? []).map((w) => w.country)
+  );
+  const regionSuggestions = toSortedUniqueByCount(
+    (fieldSuggestions.data ?? []).map((w) => w.region)
+  );
+
+  const storeSuggestionsQuery = await supabase
+    .from("purchases")
+    .select("store,created_at")
+    .eq("house_id", houseId)
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
+  const storeSuggestions = toSortedUniqueByCount(
+    (storeSuggestionsQuery.data ?? []).map((p) => p.store)
+  );
 
   return (
     <Layout
@@ -206,7 +250,7 @@ export default async function AddPurchasePage({
                 <div className="text-stone-600 font-medium">
                   {existingWine.data.name}{" "}
                   <span className="text-stone-400 font-normal">
-                    {existingWine.data.vintage}
+                    {existingWine.data.vintage ?? "NV"}
                   </span>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
@@ -241,25 +285,25 @@ export default async function AddPurchasePage({
                   <div className="text-[11px] font-extrabold text-stone-400 uppercase tracking-widest mb-4">
                     상세 정보 확인
                   </div>
-                  <Input
+                  <AutocompleteInput
                     label="생산자"
                     id="ai-producer"
                     name="producer"
                     defaultValue={q}
+                    suggestions={producerSuggestions}
                     required
                   />
                   <Input label="이름" id="ai-name" name="name" required />
                   <div className="grid grid-cols-2 gap-3">
                     <Input
-                      label="빈티지"
+                      label="빈티지(선택)"
                       id="ai-vintage"
                       name="vintage"
                       inputMode="numeric"
-                      required
+                      placeholder="NV"
                     />
-                    <Select
+                    <SelectField
                       label="종류(선택)"
-                      id="ai-type"
                       name="type"
                       defaultValue="red"
                       options={[
@@ -274,8 +318,18 @@ export default async function AddPurchasePage({
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <Input label="국가(선택)" id="ai-country" name="country" />
-                    <Input label="지역(선택)" id="ai-region" name="region" />
+                    <AutocompleteInput
+                      label="국가(선택)"
+                      id="ai-country"
+                      name="country"
+                      suggestions={countrySuggestions}
+                    />
+                    <AutocompleteInput
+                      label="지역(선택)"
+                      id="ai-region"
+                      name="region"
+                      suggestions={regionSuggestions}
+                    />
                   </div>
                 </div>
               </>
@@ -301,7 +355,13 @@ export default async function AddPurchasePage({
                     required
                   />
                 </div>
-                <Input label="구매처" name="store" required />
+                <AutocompleteInput
+                  label="구매처"
+                  id="store"
+                  name="store"
+                  suggestions={storeSuggestions}
+                  required
+                />
                 <Input
                   label="구매일"
                   name="purchased_at"

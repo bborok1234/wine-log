@@ -1,7 +1,7 @@
 import { Layout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
-import { createClient } from "@/lib/supabase/server";
 import { requireAuthedUser, requireHouseAccess } from "@/lib/house";
+import { createClient } from "@/lib/supabase/server";
 
 import { SearchBox } from "./search-box";
 
@@ -111,7 +111,7 @@ export default async function SearchPage({
                     <div className="text-stone-600 font-medium truncate mt-1">
                       {wine.name}{" "}
                       <span className="text-stone-400 font-normal">
-                        {wine.vintage}
+                        {wine.vintage ?? "NV"}
                       </span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
@@ -156,5 +156,3 @@ export default async function SearchPage({
     </Layout>
   );
 }
-
-

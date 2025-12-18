@@ -1,13 +1,66 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Card, WineTypeBadge } from "@/components/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 
 type FilterMode = "in_stock" | "out_of_stock" | "all";
-type SortMode = "stock_desc" | "price_desc" | "price_asc" | "rating_desc" | "recent";
-type TypeFilter = "ALL" | "red" | "white" | "sparkling" | "rose" | "dessert" | "fortified" | "other" | "DAILY" | "PREMIUM";
+type SortMode =
+  | "stock_desc"
+  | "price_desc"
+  | "price_asc"
+  | "rating_desc"
+  | "recent";
+type TypeFilter =
+  | "ALL"
+  | "red"
+  | "white"
+  | "sparkling"
+  | "rose"
+  | "dessert"
+  | "fortified"
+  | "other";
+interface PriceRange {
+  min: number;
+  max: number;
+}
+
+function formatPriceShortMan(value: number) {
+  return `${Math.round(value / 10000)}만`;
+}
+
+function isPriceFilterAll(priceFilter: PriceRange, priceRange: PriceRange) {
+  return (
+    priceFilter.min === priceRange.min && priceFilter.max === priceRange.max
+  );
+}
+
+function getPlaceholderImageUrl(type: string | null): string {
+  const normalizedType = (type ?? "").toLowerCase();
+  const validTypes = [
+    "red",
+    "white",
+    "sparkling",
+    "rose",
+    "dessert",
+    "fortified",
+    "other",
+  ];
+  const typeKey = validTypes.includes(normalizedType)
+    ? normalizedType
+    : "other";
+  return `/placehoder/${typeKey}.png`;
+}
 
 export interface CellarWine {
   id: string;
@@ -44,18 +97,57 @@ export function CellarListClient({
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [stockFilter, setStockFilter] = useState<FilterMode>("in_stock");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
+  const [countryFilter, setCountryFilter] = useState<string>("ALL");
   const [sortMode, setSortMode] = useState<SortMode>("stock_desc");
+  const [showPriceSlider, setShowPriceSlider] = useState(false);
+
+  // 가격 범위 계산
+  const priceRange = useMemo(() => {
+    const prices = wines.map((w) => w.avgPurchasePrice).filter((p) => p > 0);
+    if (prices.length === 0) return { min: 0, max: 500000 };
+    const min = Math.floor(Math.min(...prices) / 10000) * 10000;
+    const max = Math.ceil(Math.max(...prices) / 10000) * 10000;
+    return { min, max: Math.max(max, 100000) };
+  }, [wines]);
+
+  const [selectedPriceFilter, setSelectedPriceFilter] =
+    useState<PriceRange | null>(null);
+  const priceFilter = useMemo(() => {
+    const active = selectedPriceFilter ?? priceRange;
+    const min = Math.max(priceRange.min, active.min);
+    const max = Math.min(priceRange.max, active.max);
+    return { min: Math.min(min, max), max: Math.max(min, max) };
+  }, [priceRange, selectedPriceFilter]);
+
+  function handlePreventSliderTrackClick(
+    e: React.PointerEvent<HTMLSpanElement>
+  ) {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('[data-slot="slider-thumb"]')) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }
 
   const [confirmingWine, setConfirmingWine] = useState<CellarWine | null>(null);
   const [showStats, setShowStats] = useState(false);
 
-  const inStockWines = useMemo(() => wines.filter((w) => w.stockQty > 0), [wines]);
+  async function handleOpenBottleAndClose(formData: FormData) {
+    await openBottleAction(formData);
+    setConfirmingWine(null);
+  }
+
+  const inStockWines = useMemo(
+    () => wines.filter((w) => w.stockQty > 0),
+    [wines]
+  );
   const totalBottles = useMemo(
     () => inStockWines.reduce((acc, w) => acc + w.stockQty, 0),
     [inStockWines]
   );
   const totalValue = useMemo(
-    () => inStockWines.reduce((acc, w) => acc + w.stockQty * w.avgPurchasePrice, 0),
+    () =>
+      inStockWines.reduce((acc, w) => acc + w.stockQty * w.avgPurchasePrice, 0),
     [inStockWines]
   );
 
@@ -80,18 +172,41 @@ export function CellarListClient({
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [inStockWines]);
 
+  // 국가 목록 추출 (필터용)
+  const countries = useMemo(() => {
+    const countrySet = new Set<string>();
+    wines.forEach((w) => {
+      if (w.country?.trim()) {
+        countrySet.add(w.country.trim());
+      }
+    });
+    return Array.from(countrySet).sort();
+  }, [wines]);
+
   const filteredWines = useMemo(() => {
     let result = wines;
 
-    if (stockFilter === "in_stock") result = result.filter((w) => w.stockQty > 0);
-    else if (stockFilter === "out_of_stock") result = result.filter((w) => w.stockQty === 0);
+    if (stockFilter === "in_stock")
+      result = result.filter((w) => w.stockQty > 0);
+    else if (stockFilter === "out_of_stock")
+      result = result.filter((w) => w.stockQty === 0);
 
     if (typeFilter !== "ALL") {
-      if (typeFilter === "DAILY")
-        result = result.filter((w) => w.avgPurchasePrice > 0 && w.avgPurchasePrice <= 30000);
-      else if (typeFilter === "PREMIUM") result = result.filter((w) => w.avgPurchasePrice >= 100000);
-      else result = result.filter((w) => (w.type ?? "").toLowerCase() === typeFilter.toLowerCase());
+      result = result.filter(
+        (w) => (w.type ?? "").toLowerCase() === typeFilter.toLowerCase()
+      );
     }
+
+    if (countryFilter !== "ALL") {
+      result = result.filter((w) => w.country?.trim() === countryFilter);
+    }
+
+    // 가격 범위 필터링
+    result = result.filter((w) => {
+      const price = w.avgPurchasePrice;
+      if (price === 0) return false;
+      return price >= priceFilter.min && price <= priceFilter.max;
+    });
 
     if (searchTerm.trim()) {
       const lower = searchTerm.trim().toLowerCase();
@@ -125,7 +240,15 @@ export function CellarListClient({
     });
 
     return sorted;
-  }, [wines, searchTerm, stockFilter, typeFilter, sortMode]);
+  }, [
+    wines,
+    searchTerm,
+    stockFilter,
+    typeFilter,
+    countryFilter,
+    priceFilter,
+    sortMode,
+  ]);
 
   return (
     <>
@@ -137,7 +260,12 @@ export function CellarListClient({
               onClick={() => setShowStats(true)}
               className="absolute top-4 right-4 text-[10px] font-bold bg-stone-100 text-stone-500 px-2 py-1 rounded-full hover:bg-stone-200 transition-colors flex items-center gap-1"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-3 h-3"
+              >
                 <path d="M15.5 2A1.5 1.5 0 0014 3.5v8a1.5 1.5 0 001.5 1.5h1a1.5 1.5 0 001.5-1.5v-8A1.5 1.5 0 0016.5 2h-1zM9.5 6A1.5 1.5 0 008 7.5v4a1.5 1.5 0 001.5 1.5h1a1.5 1.5 0 001.5-1.5v-4A1.5 1.5 0 0010.5 6h-1zM3.5 10A1.5 1.5 0 002 11.5v0A1.5 1.5 0 003.5 13h1a1.5 1.5 0 001.5-1.5v0A1.5 1.5 0 004.5 10h-1z" />
               </svg>
               분석 보기
@@ -150,7 +278,9 @@ export function CellarListClient({
                 </p>
                 <p className="text-3xl font-bold text-stone-800 tracking-tight">
                   {totalValue.toLocaleString()}
-                  <span className="text-lg font-medium text-stone-400 ml-1">원</span>
+                  <span className="text-lg font-medium text-stone-400 ml-1">
+                    원
+                  </span>
                 </p>
               </div>
               <div className="text-right">
@@ -159,7 +289,9 @@ export function CellarListClient({
                 </p>
                 <p className="text-3xl font-bold text-wine-600 tracking-tight">
                   {totalBottles}
-                  <span className="text-lg font-medium text-wine-300 ml-1">병</span>
+                  <span className="text-lg font-medium text-wine-300 ml-1">
+                    병
+                  </span>
                 </p>
               </div>
             </div>
@@ -188,85 +320,147 @@ export function CellarListClient({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <svg className="w-5 h-5 text-stone-400 absolute left-4 top-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          <svg
+            className="w-5 h-5 text-stone-400 absolute left-4 top-4"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2.5}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+            />
           </svg>
         </div>
 
-        <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-2 mb-2 px-1">
-          <button
-            type="button"
-            onClick={() => setTypeFilter("ALL")}
-            className={[
-              "px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 border",
-              typeFilter === "ALL"
-                ? "bg-stone-800 text-white border-stone-800 shadow-md transform scale-105"
-                : "bg-white text-stone-500 border-transparent shadow-sm",
-            ].join(" ")}
-          >
-            전체
-          </button>
-          <button
-            type="button"
-            onClick={() => setTypeFilter("red")}
-            className={[
-              "px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 border",
-              typeFilter === "red"
-                ? "bg-wine-100 text-wine-800 border-wine-200 shadow-md transform scale-105"
-                : "bg-white text-stone-500 border-transparent shadow-sm",
-            ].join(" ")}
-          >
-            레드
-          </button>
-          <button
-            type="button"
-            onClick={() => setTypeFilter("white")}
-            className={[
-              "px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 border",
-              typeFilter === "white"
-                ? "bg-yellow-100 text-yellow-800 border-yellow-200 shadow-md transform scale-105"
-                : "bg-white text-stone-500 border-transparent shadow-sm",
-            ].join(" ")}
-          >
-            화이트
-          </button>
-          <button
-            type="button"
-            onClick={() => setTypeFilter("sparkling")}
-            className={[
-              "px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 border",
-              typeFilter === "sparkling"
-                ? "bg-emerald-100 text-emerald-800 border-emerald-200 shadow-md transform scale-105"
-                : "bg-white text-stone-500 border-transparent shadow-sm",
-            ].join(" ")}
-          >
-            스파클링
-          </button>
-          <div className="w-px h-6 bg-stone-300/30 mx-1 self-center flex-shrink-0" />
-          <button
-            type="button"
-            onClick={() => setTypeFilter("DAILY")}
-            className={[
-              "px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 border",
-              typeFilter === "DAILY"
-                ? "bg-indigo-100 text-indigo-800 border-indigo-200 shadow-md transform scale-105"
-                : "bg-white text-stone-500 border-transparent shadow-sm",
-            ].join(" ")}
-          >
-            데일리
-          </button>
-          <button
-            type="button"
-            onClick={() => setTypeFilter("PREMIUM")}
-            className={[
-              "px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 border",
-              typeFilter === "PREMIUM"
-                ? "bg-purple-100 text-purple-800 border-purple-200 shadow-md transform scale-105"
-                : "bg-white text-stone-500 border-transparent shadow-sm",
-            ].join(" ")}
-          >
-            프리미엄
-          </button>
+        <div className="space-y-2 mb-2">
+          {/* 타입/국가/가격: 기존처럼 가로 나열(스크롤) */}
+          <div className="flex items-end gap-2 overflow-x-auto no-scrollbar pb-2 px-1">
+            {/* 타입 */}
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <span className="text-[10px] font-extrabold tracking-widest text-stone-400 px-1">
+                타입
+              </span>
+              <div className="relative group">
+                <Select
+                  value={typeFilter}
+                  onValueChange={(v) => setTypeFilter(v as TypeFilter)}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className={[
+                      "rounded-full px-3 py-2 text-xs font-bold shadow-sm hover:shadow-md border transition-all",
+                      "data-[size=sm]:h-auto",
+                      typeFilter === "ALL"
+                        ? "bg-white text-stone-700 border-stone-200"
+                        : "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
+                    ].join(" ")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">전체</SelectItem>
+                    <SelectItem value="red">레드</SelectItem>
+                    <SelectItem value="white">화이트</SelectItem>
+                    <SelectItem value="sparkling">스파클링</SelectItem>
+                    <SelectItem value="rose">로제</SelectItem>
+                    <SelectItem value="dessert">디저트</SelectItem>
+                    <SelectItem value="fortified">주정강화</SelectItem>
+                    <SelectItem value="other">기타</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* 국가 */}
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <span className="text-[10px] font-extrabold tracking-widest text-stone-400 px-1">
+                국가
+              </span>
+              <div className="relative group">
+                <Select value={countryFilter} onValueChange={setCountryFilter}>
+                  <SelectTrigger
+                    size="sm"
+                    className={[
+                      "rounded-full px-3 py-2 text-xs font-bold shadow-sm hover:shadow-md border transition-all",
+                      "data-[size=sm]:h-auto",
+                      countryFilter === "ALL"
+                        ? "bg-white text-stone-700 border-stone-200"
+                        : "bg-pink-50 text-pink-700 border-pink-200",
+                    ].join(" ")}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">전체</SelectItem>
+                    {countries.map((country) => (
+                      <SelectItem key={country} value={country}>
+                        {country}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* 가격 */}
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <span className="text-[10px] font-extrabold tracking-widest text-stone-400 px-1">
+                가격
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPriceSlider(!showPriceSlider)}
+                className={[
+                  "px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-300 border shadow-sm hover:shadow-md",
+                  isPriceFilterAll(priceFilter, priceRange)
+                    ? "bg-white text-stone-700 border-stone-200"
+                    : "bg-rose-50 text-rose-700 border-rose-200",
+                ].join(" ")}
+              >
+                {isPriceFilterAll(priceFilter, priceRange)
+                  ? "전체"
+                  : `${formatPriceShortMan(
+                      priceFilter.min
+                    )}~${formatPriceShortMan(priceFilter.max)}`}
+              </button>
+            </div>
+          </div>
+
+          {/* 가격 범위 슬라이더 (토글) */}
+          {showPriceSlider ? (
+            <div className="px-1 pb-2 animate-fade-in">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-stone-600">가격대</span>
+                <span className="text-xs font-bold text-stone-800">
+                  {Math.round(priceFilter.min / 10000)}만원 ~{" "}
+                  {Math.round(priceFilter.max / 10000)}만원
+                </span>
+              </div>
+              <Slider
+                min={priceRange.min}
+                max={priceRange.max}
+                step={10000}
+                value={[priceFilter.min, priceFilter.max]}
+                onValueChange={(values) => {
+                  const [min, max] = values;
+                  setSelectedPriceFilter({ min, max });
+                }}
+                onPointerDownCapture={handlePreventSliderTrackClick}
+                className={[
+                  "py-2",
+                  // 색상/스타일 오버라이드 (shadcn Slider 내부 슬롯 선택)
+                  "[&_[data-slot=slider-track]]:bg-stone-200",
+                  "[&_[data-slot=slider-range]]:bg-wine-500",
+                  "[&_[data-slot=slider-thumb]]:border-wine-500",
+                  "[&_[data-slot=slider-thumb]]:size-5",
+                ].join(" ")}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -285,7 +479,9 @@ export function CellarListClient({
                 onClick={() => setStockFilter(tab.value)}
                 className={[
                   "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-300",
-                  isActive ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600",
+                  isActive
+                    ? "bg-white text-stone-800 shadow-sm"
+                    : "text-stone-400 hover:text-stone-600",
                 ].join(" ")}
               >
                 {tab.label}
@@ -307,8 +503,18 @@ export function CellarListClient({
             <option value="rating_desc">평점 높은 순</option>
           </select>
           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-stone-400">
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M19 9l-7 7-7-7"
+              ></path>
             </svg>
           </div>
         </div>
@@ -320,9 +526,13 @@ export function CellarListClient({
             <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-inner">
               🤷‍♂️
             </div>
-            <p className="text-stone-400 mb-2 font-medium">조건에 맞는 와인이 없어요.</p>
+            <p className="text-stone-400 mb-2 font-medium">
+              조건에 맞는 와인이 없어요.
+            </p>
             {stockFilter === "in_stock" ? (
-              <p className="text-sm text-stone-400">새로운 와인을 추가해보세요!</p>
+              <p className="text-sm text-stone-400">
+                새로운 와인을 추가해보세요!
+              </p>
             ) : null}
           </div>
         ) : (
@@ -339,62 +549,77 @@ export function CellarListClient({
                 : "bg-stone-300";
 
             return (
-              <div key={wine.id} className="animate-fade-in-up" style={{ animationDelay: `${index * 50}ms` }}>
+              <div
+                key={wine.id}
+                className="animate-fade-in-up"
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
                 <Card
                   onClick={() => router.push(`/h/${houseId}/wine/${wine.id}`)}
                   className={[
                     "relative flex flex-col gap-3 group overflow-hidden",
-                    isOutOfStock ? "opacity-70 grayscale-[0.8] hover:opacity-100 hover:grayscale-0" : "",
+                    isOutOfStock
+                      ? "opacity-70 grayscale-[0.8] hover:opacity-100 hover:grayscale-0"
+                      : "",
                   ].join(" ")}
                 >
                   {!isOutOfStock ? (
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${accent} opacity-0 group-hover:opacity-100 transition-opacity`} />
+                    <div
+                      className={`absolute left-0 top-0 bottom-0 w-1 ${accent} opacity-0 group-hover:opacity-100 transition-opacity`}
+                    />
                   ) : null}
 
-                  <div className="flex justify-between items-start gap-4">
-                    {wine.thumbnailUrl ? (
-                      <div
-                        className="w-20 h-24 rounded-2xl bg-stone-200 bg-cover bg-center flex-shrink-0 shadow-md group-hover:shadow-lg transition-all transform group-hover:scale-[1.02]"
-                        style={{ backgroundImage: `url(${wine.thumbnailUrl})` }}
+                  <div className="flex items-center gap-4">
+                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white flex-shrink-0 shadow-md group-hover:shadow-lg transition-all transform group-hover:scale-[1.02] overflow-hidden">
+                      <Image
+                        src={
+                          wine.thumbnailUrl ?? getPlaceholderImageUrl(wine.type)
+                        }
+                        alt={wine.name ?? wine.producer}
+                        fill
+                        className="object-contain"
+                        sizes="80px"
+                        loading="eager"
                       />
-                    ) : (
-                      <div className="w-20 h-24 rounded-2xl bg-stone-100 flex items-center justify-center flex-shrink-0 text-3xl border border-stone-100/50 shadow-inner">
-                        🍷
-                      </div>
-                    )}
+                    </div>
 
-                    <div className="flex-1 min-w-0 pt-0.5">
-                      <div className="flex items-center gap-2 mb-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3">
                         <h3 className="font-bold text-stone-900 text-[17px] leading-tight truncate tracking-tight">
                           {wine.producer}
                         </h3>
+                        <span className="flex-shrink-0 text-sm font-extrabold text-stone-900">
+                          {formatPriceManWon(wine.avgPurchasePrice)}
+                        </span>
                       </div>
-                      <p className="text-stone-600 text-[15px] font-medium truncate mb-2.5">
-                        {wine.name}
-                        {wine.vintage ? (
-                          <span className="text-stone-400 font-normal ml-0.5">
-                            &apos;{String(wine.vintage).slice(-2)}
-                          </span>
-                        ) : null}
-                      </p>
 
-                      <div className="flex items-center gap-2 mb-2.5">
+                      <div className="mt-0.5 flex items-baseline gap-2 min-w-0">
+                        <p className="text-stone-600 text-[15px] font-medium truncate min-w-0">
+                          {wine.name ?? "-"}
+                        </p>
+                        <span className="flex-shrink-0 text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full">
+                          {wine.vintage ? String(wine.vintage) : "NV"}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-2 text-xs font-bold min-w-0">
                         <WineTypeBadge type={wine.type} />
+                        <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                          {wine.country?.trim() || "국가 미상"}
+                        </span>
                         {wine.region ? (
-                          <span className="truncate max-w-[100px] text-[10px] bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full font-bold">
+                          <span className="truncate text-[10px] text-stone-400 font-semibold min-w-0">
                             {wine.region}
                           </span>
                         ) : null}
-                      </div>
-
-                      <div className="flex items-center gap-4 text-xs text-stone-500 font-bold">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-1 h-1 rounded-full bg-stone-300" />
-                          {formatPriceManWon(wine.avgPurchasePrice)}
-                        </span>
                         {wine.rating ? (
-                          <span className="flex items-center gap-1 text-amber-500">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                          <span className="ml-auto flex items-center gap-1 text-amber-500 flex-shrink-0">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                              className="w-3.5 h-3.5"
+                            >
                               <path
                                 fillRule="evenodd"
                                 d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
@@ -407,15 +632,21 @@ export function CellarListClient({
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-2.5 mt-0.5">
+                    <div className="flex flex-col items-center justify-center gap-2 flex-shrink-0">
                       <div
                         className={[
-                          "flex flex-col items-center justify-center min-w-[2.8rem] py-1 rounded-2xl shadow-sm",
-                          isOutOfStock ? "bg-stone-100 text-stone-400" : "bg-wine-50 text-wine-700",
+                          "w-12 h-12 rounded-full flex flex-col items-center justify-center shadow-sm border",
+                          isOutOfStock
+                            ? "bg-stone-50 text-stone-400 border-stone-100"
+                            : "bg-wine-50 text-wine-700 border-wine-100",
                         ].join(" ")}
                       >
-                        <span className="text-lg font-extrabold leading-none">{wine.stockQty}</span>
-                        <span className="text-[9px] font-bold uppercase tracking-wider opacity-60">EA</span>
+                        <span className="text-lg font-extrabold leading-none">
+                          {wine.stockQty}
+                        </span>
+                        <span className="text-[9px] font-bold tracking-wider opacity-60">
+                          병
+                        </span>
                       </div>
 
                       {!isOutOfStock ? (
@@ -425,16 +656,20 @@ export function CellarListClient({
                             e.stopPropagation();
                             setConfirmingWine(wine);
                           }}
-                          className="w-10 h-10 rounded-full bg-white border border-wine-100 text-wine-400 hover:bg-wine-50 hover:text-wine-600 hover:border-wine-200 shadow-sm flex items-center justify-center transition-all active:scale-90"
+                          className="w-12 h-12 rounded-full bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 hover:border-stone-300 shadow-sm flex flex-col items-center justify-center transition-all active:scale-95"
                           title="1병 마시기"
+                          aria-label="1병 마시기"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                            <path d="M7.5 2c-1.79 1.15-3 3.18-3 5.5s1.21 4.35 3.03 5.5C4.46 13 2 10.54 2 7.5A5.5 5.5 0 017.5 2zM19.07 3.5a.75.75 0 10-1.14 1 5.5 5.5 0 00-1.43 3c0 3.15 1.64 5.82 4.05 7.23 1.63-.64 2.95-1.92 3.75-3.48A6.48 6.48 0 0119.07 3.5zM10.5 17.96V19.5H13v-1.54c2.81-.38 5-2.76 5-5.69 0-3.32-2.91-6.02-6.5-6.02S5 9.17 5 12.27c0 2.93 2.19 5.31 5 5.69z" />
-                          </svg>
+                          <span className="text-sm font-extrabold leading-none">
+                            -1
+                          </span>
+                          <span className="text-[9px] font-bold text-stone-400 mt-1">
+                            마시기
+                          </span>
                         </button>
                       ) : (
-                        <span className="px-2 py-1 rounded-md bg-stone-100 text-[9px] font-extrabold text-stone-400 uppercase tracking-widest">
-                          Sold Out
+                        <span className="w-12 h-12 rounded-2xl bg-stone-50 border border-stone-100 text-[10px] font-extrabold text-stone-400 flex items-center justify-center tracking-widest">
+                          품절
                         </span>
                       )}
                     </div>
@@ -459,16 +694,22 @@ export function CellarListClient({
               <div className="w-16 h-16 bg-gradient-to-br from-wine-100 to-pink-100 text-wine-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-inner">
                 🥂
               </div>
-              <h3 className="text-xl font-bold text-stone-900 mb-2">한 병 마실까요?</h3>
+              <h3 className="text-xl font-bold text-stone-900 mb-2">
+                한 병 마실까요?
+              </h3>
               <p className="text-stone-600 text-sm leading-relaxed">
-                <span className="font-bold text-stone-800 text-base">{confirmingWine.producer}</span>
+                <span className="font-bold text-stone-800 text-base">
+                  {confirmingWine.producer}
+                </span>
                 <br />
                 <span className="text-stone-500">{confirmingWine.name}</span>
                 <br />
                 <br />
                 기분 좋은 한 잔 되세요!
                 <br />
-                <span className="text-xs text-stone-400">(재고 1병이 차감됩니다)</span>
+                <span className="text-xs text-stone-400">
+                  (재고 1병이 차감됩니다)
+                </span>
               </p>
             </div>
 
@@ -481,14 +722,12 @@ export function CellarListClient({
                 취소
               </button>
 
-              <form className="w-full">
+              <form action={handleOpenBottleAndClose} className="w-full">
                 <input type="hidden" name="houseId" value={houseId} />
                 <input type="hidden" name="wineId" value={confirmingWine.id} />
                 <button
                   type="submit"
-                  formAction={openBottleAction}
                   className="inline-flex items-center justify-center rounded-full px-6 py-4 text-sm font-bold bg-gradient-to-br from-wine-700 to-wine-900 text-white shadow-lg shadow-wine-200 hover:shadow-wine-300 hover:brightness-105 w-full"
-                  onClick={() => setConfirmingWine(null)}
                 >
                   확인
                 </button>
@@ -508,33 +747,64 @@ export function CellarListClient({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-stone-900">내 와인 취향 분석</h2>
+              <h2 className="text-xl font-bold text-stone-900">
+                내 와인 취향 분석
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowStats(false)}
                 className="p-2 bg-stone-100 rounded-full text-stone-500 hover:bg-stone-200"
                 aria-label="닫기"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </button>
             </div>
 
             <div className="mb-8">
-              <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">와인 종류 분포</h3>
+              <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">
+                와인 종류 분포
+              </h3>
               <div className="flex h-6 w-full rounded-full overflow-hidden bg-stone-100 mb-3">
                 {(() => {
                   const parts = [
                     { key: "red", count: statsByType.red, bg: "bg-wine-600" },
-                    { key: "white", count: statsByType.white, bg: "bg-yellow-400" },
-                    { key: "sparkling", count: statsByType.sparkling, bg: "bg-emerald-500" },
-                    { key: "others", count: statsByType.others, bg: "bg-stone-300" },
+                    {
+                      key: "white",
+                      count: statsByType.white,
+                      bg: "bg-yellow-400",
+                    },
+                    {
+                      key: "sparkling",
+                      count: statsByType.sparkling,
+                      bg: "bg-emerald-500",
+                    },
+                    {
+                      key: "others",
+                      count: statsByType.others,
+                      bg: "bg-stone-300",
+                    },
                   ];
                   return parts.map((p) => {
                     if (p.count === 0 || totalBottles === 0) return null;
                     const percent = (p.count / totalBottles) * 100;
-                    return <div key={p.key} className={p.bg} style={{ width: `${percent}%` }} />;
+                    return (
+                      <div
+                        key={p.key}
+                        className={p.bg}
+                        style={{ width: `${percent}%` }}
+                      />
+                    );
                   });
                 })()}
               </div>
@@ -550,8 +820,13 @@ export function CellarListClient({
                     if (it.count === 0 || totalBottles === 0) return null;
                     const percent = Math.round((it.count / totalBottles) * 100);
                     return (
-                      <div key={it.label} className="flex justify-between items-center p-2 rounded-xl bg-stone-50">
-                        <span className="text-stone-600 font-medium">{it.label}</span>
+                      <div
+                        key={it.label}
+                        className="flex justify-between items-center p-2 rounded-xl bg-stone-50"
+                      >
+                        <span className="text-stone-600 font-medium">
+                          {it.label}
+                        </span>
                         <span className="font-bold text-stone-900">
                           {percent}% ({it.count}병)
                         </span>
@@ -563,18 +838,29 @@ export function CellarListClient({
             </div>
 
             <div className="mb-6">
-              <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">국가별 선호도</h3>
+              <h3 className="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">
+                국가별 선호도
+              </h3>
               <div className="space-y-3">
                 {statsByCountry.map(([country, count]) => {
-                  const percent = totalBottles ? (count / totalBottles) * 100 : 0;
+                  const percent = totalBottles
+                    ? (count / totalBottles) * 100
+                    : 0;
                   return (
                     <div key={country} className="relative">
                       <div className="flex justify-between text-sm mb-1 relative z-10">
-                        <span className="font-medium text-stone-700">{country || "국가 미상"}</span>
-                        <span className="font-bold text-stone-900">{count}병</span>
+                        <span className="font-medium text-stone-700">
+                          {country || "국가 미상"}
+                        </span>
+                        <span className="font-bold text-stone-900">
+                          {count}병
+                        </span>
                       </div>
                       <div className="w-full bg-stone-100 rounded-full h-2 overflow-hidden">
-                        <div className="bg-indigo-400 h-full rounded-full" style={{ width: `${percent}%` }} />
+                        <div
+                          className="bg-indigo-400 h-full rounded-full"
+                          style={{ width: `${percent}%` }}
+                        />
                       </div>
                     </div>
                   );
@@ -587,5 +873,3 @@ export function CellarListClient({
     </>
   );
 }
-
-

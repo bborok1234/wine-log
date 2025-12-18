@@ -179,7 +179,7 @@ export type Database = {
           tasting_review: string | null;
           type: string | null;
           updated_at: string;
-          vintage: number;
+          vintage: number | null;
         };
         Insert: {
           avg_purchase_price?: number;
@@ -200,7 +200,7 @@ export type Database = {
           tasting_review?: string | null;
           type?: string | null;
           updated_at?: string;
-          vintage: number;
+          vintage?: number | null;
         };
         Update: {
           avg_purchase_price?: number;
@@ -221,7 +221,7 @@ export type Database = {
           tasting_review?: string | null;
           type?: string | null;
           updated_at?: string;
-          vintage?: number;
+          vintage?: number | null;
         };
         Relationships: [
           {

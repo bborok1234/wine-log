@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 
 import { setFlash } from "@/lib/flash";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 function getString(formData: FormData, key: string) {
@@ -37,7 +38,7 @@ export async function createHouse(formData: FormData) {
 
   if (error || !data) {
     // 서버 로그로 원인 추적(쿠키/세션/권한 문제)
-    console.error("[createHouse] insert failed", {
+    logger.error("[createHouse] insert failed", {
       error: error?.message,
       hasClaims: !!claimsData?.claims,
       userId,

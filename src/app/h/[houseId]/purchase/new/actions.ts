@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
 import { setFlash } from "@/lib/flash";
+import { logger } from "@/lib/logger";
 import { toStoredWineImagePath } from "@/lib/storage-image";
+import { createClient } from "@/lib/supabase/server";
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -18,13 +19,21 @@ function getNumber(formData: FormData, key: string) {
   return Number.isFinite(n) ? n : NaN;
 }
 
+function getOptionalIntOrNull(formData: FormData, key: string) {
+  const raw = getString(formData, key);
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return NaN;
+  return Math.trunc(n);
+}
+
 export async function savePurchase(formData: FormData) {
   const houseId = getString(formData, "houseId");
   const existingWineId = getString(formData, "wineId");
 
   const producer = getString(formData, "producer");
   const name = getString(formData, "name");
-  const vintage = getNumber(formData, "vintage");
+  const vintage = getOptionalIntOrNull(formData, "vintage");
   const country = getString(formData, "country") || null;
   const region = getString(formData, "region") || null;
   const type = getString(formData, "type") || null;
@@ -58,11 +67,15 @@ export async function savePurchase(formData: FormData) {
 
   let wineId = existingWineId;
   if (!wineId) {
-    if (!producer || !name || !Number.isFinite(vintage)) {
+    if (!producer || !name) {
       await setFlash({
         kind: "error",
-        message: "와인 정보(생산자/이름/빈티지)는 필수입니다.",
+        message: "와인 정보(생산자/이름)는 필수입니다.",
       });
+      redirect(`/h/${houseId}/purchase/new`);
+    }
+    if (Number.isNaN(vintage)) {
+      await setFlash({ kind: "error", message: "빈티지를 확인해주세요." });
       redirect(`/h/${houseId}/purchase/new`);
     }
 
@@ -72,7 +85,7 @@ export async function savePurchase(formData: FormData) {
         house_id: houseId,
         producer,
         name,
-        vintage: Math.trunc(vintage),
+        vintage: vintage,
         country,
         region,
         type,
@@ -80,14 +93,13 @@ export async function savePurchase(formData: FormData) {
       .select("id")
       .single();
 
-    if (created.error || !created.data)
-      {
-        await setFlash({
-          kind: "error",
-          message: created.error?.message ?? "와인 생성 실패",
-        });
-        redirect(`/h/${houseId}/purchase/new`);
-      }
+    if (created.error || !created.data) {
+      await setFlash({
+        kind: "error",
+        message: created.error?.message ?? "와인 생성 실패",
+      });
+      redirect(`/h/${houseId}/purchase/new`);
+    }
 
     wineId = created.data.id;
   }
@@ -115,7 +127,7 @@ export async function savePurchase(formData: FormData) {
       .eq("id", wineId);
 
     if (updated.error) {
-      console.error("[savePurchase] label url save failed", updated.error);
+      logger.error("[savePurchase] label url save failed", updated.error);
       await setFlash({
         kind: "error",
         message: "이미지 URL을 저장하지 못했어요. 다시 시도해주세요.",
@@ -134,14 +146,11 @@ export async function savePurchase(formData: FormData) {
     receipt_photo_url: receiptPhotoUrl,
   });
 
-  if (inserted.error)
-    {
-      await setFlash({ kind: "error", message: inserted.error.message });
-      redirect(`/h/${houseId}/purchase/new`);
-    }
+  if (inserted.error) {
+    await setFlash({ kind: "error", message: inserted.error.message });
+    redirect(`/h/${houseId}/purchase/new`);
+  }
 
   revalidatePath(`/h/${houseId}/cellar`);
   redirect(`/h/${houseId}/cellar`);
 }
-
-

@@ -1,16 +1,25 @@
 import { Layout } from "@/components/layout";
 import { Button, Card, Input } from "@/components/ui";
+import { logger } from "@/lib/logger";
 
 import { login, signup } from "./actions";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ error?: string; notice?: string }>;
+  searchParams?: Promise<{
+    error?: string;
+    notice?: string;
+    redirect?: string;
+  }>;
 }) {
   const params = (await searchParams) ?? {};
   const error = params.error;
   const notice = params.notice;
+  const redirect = params.redirect;
+
+  logger.log("params", params);
+  logger.log(error, notice, redirect);
 
   return (
     <Layout
@@ -43,13 +52,20 @@ export default async function LoginPage({
           ) : null}
 
           <form className="space-y-1">
+            {redirect ? (
+              <input type="hidden" name="redirect" value={redirect} />
+            ) : null}
             <Input label="이메일" name="email" type="email" required />
             <Input label="비밀번호" name="password" type="password" required />
             <div className="pt-2 flex gap-3">
               <Button className="flex-1" formAction={login}>
                 로그인
               </Button>
-              <Button className="flex-1" variant="secondary" formAction={signup}>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                formAction={signup}
+              >
                 가입
               </Button>
             </div>
@@ -59,5 +75,3 @@ export default async function LoginPage({
     </Layout>
   );
 }
-
-

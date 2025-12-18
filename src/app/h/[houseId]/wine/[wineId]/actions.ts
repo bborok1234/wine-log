@@ -71,7 +71,7 @@ export async function updateWineInfo(formData: FormData) {
   const nameRaw = getString(formData, "name");
   const name = nameRaw ? nameRaw : undefined;
   const vintageRaw = getIntOrNull(formData, "vintage");
-  const vintage = vintageRaw ?? undefined;
+  const vintage = vintageRaw;
   const country = getString(formData, "country") || null;
   const region = getString(formData, "region") || null;
   const type = getString(formData, "type") || null;
@@ -118,4 +118,104 @@ export async function updateWineInfo(formData: FormData) {
   }
 
   revalidatePath(`/h/${houseId}/wine/${wineId}`);
+}
+
+export async function deleteWine(formData: FormData) {
+  const houseId = getString(formData, "houseId");
+  const wineId = getString(formData, "wineId");
+  if (!houseId || !wineId) redirect("/app?error=bad-request");
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("wines")
+    .delete()
+    .eq("id", wineId)
+    .eq("house_id", houseId);
+
+  if (error) {
+    await setFlash({ kind: "error", message: error.message });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+
+  revalidatePath(`/h/${houseId}/cellar`);
+  redirect(`/h/${houseId}/cellar`);
+}
+
+export async function deletePurchase(formData: FormData) {
+  const houseId = getString(formData, "houseId");
+  const purchaseId = getString(formData, "purchaseId");
+  if (!houseId || !purchaseId) redirect("/app?error=bad-request");
+
+  const supabase = await createClient();
+
+  // 구매 기록 조회 (wine_id 확인용)
+  const purchase = await supabase
+    .from("purchases")
+    .select("wine_id,quantity,unit_price")
+    .eq("id", purchaseId)
+    .eq("house_id", houseId)
+    .maybeSingle();
+
+  if (purchase.error || !purchase.data) {
+    await setFlash({
+      kind: "error",
+      message: purchase.error?.message ?? "구매 기록을 찾을 수 없어요.",
+    });
+    redirect(`/h/${houseId}/cellar`);
+  }
+
+  const { wine_id, quantity, unit_price } = purchase.data;
+
+  // 구매 기록 삭제
+  const { error: deleteError } = await supabase
+    .from("purchases")
+    .delete()
+    .eq("id", purchaseId)
+    .eq("house_id", houseId);
+
+  if (deleteError) {
+    await setFlash({ kind: "error", message: deleteError.message });
+    redirect(`/h/${houseId}/wine/${wine_id}`);
+  }
+
+  // wines 통계 업데이트 (재고, 총 구매 수량, 총 구매 금액 감소)
+  const wine = await supabase
+    .from("wines")
+    .select("stock_qty,purchase_qty_total,purchase_value_total")
+    .eq("id", wine_id)
+    .eq("house_id", houseId)
+    .maybeSingle();
+
+  if (wine.data) {
+    const newStockQty = Math.max(0, wine.data.stock_qty - quantity);
+    const newPurchaseQtyTotal = Math.max(
+      0,
+      wine.data.purchase_qty_total - quantity
+    );
+    const newPurchaseValueTotal = Math.max(
+      0,
+      wine.data.purchase_value_total - unit_price * quantity
+    );
+    const newAvgPrice =
+      newPurchaseQtyTotal > 0 ? newPurchaseValueTotal / newPurchaseQtyTotal : 0;
+
+    const { error: updateError } = await supabase
+      .from("wines")
+      .update({
+        stock_qty: newStockQty,
+        purchase_qty_total: newPurchaseQtyTotal,
+        purchase_value_total: newPurchaseValueTotal,
+        avg_purchase_price: newAvgPrice,
+      })
+      .eq("id", wine_id)
+      .eq("house_id", houseId);
+
+    if (updateError) {
+      await setFlash({ kind: "error", message: updateError.message });
+      redirect(`/h/${houseId}/wine/${wine_id}`);
+    }
+  }
+
+  revalidatePath(`/h/${houseId}/wine/${wine_id}`);
+  redirect(`/h/${houseId}/wine/${wine_id}`);
 }
