@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
 import {
   useCallback,
@@ -135,11 +136,14 @@ export function CellarListClient({
   houseId,
   initialPage,
   openBottleAction,
+  restoreBottleAction,
 }: {
   houseId: string;
   initialPage: CellarListPage;
   openBottleAction: (formData: FormData) => void | Promise<void>;
+  restoreBottleAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const router = useRouter();
   const [q, setQ] = useQueryState("q", { defaultValue: "", shallow: true });
   const [stockFilter, setStockFilter] = useQueryState("stock", {
     defaultValue: "in_stock",
@@ -224,6 +228,8 @@ export function CellarListClient({
 
   const [confirmingWine, setConfirmingWine] = useState<CellarWine | null>(null);
   const [showStats, setShowStats] = useState(false);
+  const [undoWine, setUndoWine] = useState<CellarWine | null>(null);
+  const [isUndoing, setIsUndoing] = useState(false);
 
   useEffect(() => {
     setSearchTerm(q);
@@ -275,12 +281,145 @@ export function CellarListClient({
     void fetchHouseStats();
   }, [fetchHouseStats]);
 
+  function getStatsTypeKey(
+    rawType: string | null
+  ): "red" | "white" | "sparkling" | "others" {
+    const t = (rawType ?? "").toLowerCase();
+    if (t === "red") return "red";
+    if (t === "white") return "white";
+    if (t === "sparkling") return "sparkling";
+    return "others";
+  }
+
+  function bumpByCountry(
+    rows: Array<[string, number]>,
+    country: string | null,
+    delta: number
+  ): Array<[string, number]> {
+    const key = country ?? "";
+    const next: Array<[string, number]> = rows.map(([c, n]) =>
+      c === key
+        ? ([c, Math.max(0, n + delta)] as [string, number])
+        : ([c, n] as [string, number])
+    );
+    if (next.some(([c]) => c === key)) return next;
+    if (delta <= 0) return next;
+    return [...next, [key, delta] as [string, number]];
+  }
+
+  function applyOptimisticConsume(wine: CellarWine) {
+    setWines((prev) =>
+      prev.map((w) =>
+        w.id === wine.id ? { ...w, stockQty: Math.max(0, w.stockQty - 1) } : w
+      )
+    );
+    const typeKey = getStatsTypeKey(wine.type);
+    const price = Number.isFinite(wine.avgPurchasePrice)
+      ? wine.avgPurchasePrice
+      : 0;
+    setStats((prev) => ({
+      ...prev,
+      onHand: {
+        ...prev.onHand,
+        bottles: Math.max(0, (prev.onHand?.bottles ?? 0) - 1),
+        value: Math.max(0, (prev.onHand?.value ?? 0) - price),
+        byType: {
+          ...prev.onHand.byType,
+          [typeKey]: Math.max(0, (prev.onHand.byType?.[typeKey] ?? 0) - 1),
+        },
+        byCountry: bumpByCountry(prev.onHand.byCountry ?? [], wine.country, -1),
+      },
+      consumed: {
+        ...prev.consumed,
+        bottles: Math.max(0, (prev.consumed?.bottles ?? 0) + 1),
+        value: Math.max(0, (prev.consumed?.value ?? 0) + price),
+        byType: {
+          ...prev.consumed.byType,
+          [typeKey]: Math.max(0, (prev.consumed.byType?.[typeKey] ?? 0) + 1),
+        },
+        byCountry: bumpByCountry(
+          prev.consumed.byCountry ?? [],
+          wine.country,
+          +1
+        ),
+      },
+    }));
+  }
+
+  function applyOptimisticRestore(wine: CellarWine) {
+    setWines((prev) =>
+      prev.map((w) =>
+        w.id === wine.id ? { ...w, stockQty: w.stockQty + 1 } : w
+      )
+    );
+    const typeKey = getStatsTypeKey(wine.type);
+    const price = Number.isFinite(wine.avgPurchasePrice)
+      ? wine.avgPurchasePrice
+      : 0;
+    setStats((prev) => ({
+      ...prev,
+      onHand: {
+        ...prev.onHand,
+        bottles: (prev.onHand?.bottles ?? 0) + 1,
+        value: (prev.onHand?.value ?? 0) + price,
+        byType: {
+          ...prev.onHand.byType,
+          [typeKey]: (prev.onHand.byType?.[typeKey] ?? 0) + 1,
+        },
+        byCountry: bumpByCountry(prev.onHand.byCountry ?? [], wine.country, +1),
+      },
+      consumed: {
+        ...prev.consumed,
+        bottles: Math.max(0, (prev.consumed?.bottles ?? 0) - 1),
+        value: Math.max(0, (prev.consumed?.value ?? 0) - price),
+        byType: {
+          ...prev.consumed.byType,
+          [typeKey]: Math.max(0, (prev.consumed.byType?.[typeKey] ?? 0) - 1),
+        },
+        byCountry: bumpByCountry(
+          prev.consumed.byCountry ?? [],
+          wine.country,
+          -1
+        ),
+      },
+    }));
+  }
+
   async function handleOpenBottleAndClose(formData: FormData) {
+    const optimistic = confirmingWine;
+    if (optimistic) applyOptimisticConsume(optimistic);
     await openBottleAction(formData);
     setConfirmingWine(null);
+    if (optimistic) {
+      setUndoWine(optimistic);
+      window.setTimeout(
+        () => setUndoWine((prev) => (prev?.id === optimistic.id ? null : prev)),
+        8000
+      );
+    }
     // 서버 상태 변경(재고) 반영
     void fetchFirstPage();
     void fetchHouseStats();
+    router.refresh();
+  }
+
+  async function handleUndoRestore() {
+    if (!undoWine) return;
+    if (isUndoing) return;
+    setIsUndoing(true);
+    try {
+      applyOptimisticRestore(undoWine);
+      const fd = new FormData();
+      fd.append("houseId", houseId);
+      fd.append("wineId", undoWine.id);
+      await restoreBottleAction(fd);
+      setUndoWine(null);
+      void fetchFirstPage();
+      void fetchHouseStats();
+      router.refresh();
+    } finally {
+      setIsUndoing(false);
+    }
   }
 
   const onHandBottles = stats.onHand?.bottles ?? 0;
@@ -540,7 +679,7 @@ export function CellarListClient({
 
         <div className="relative mb-4">
           <input
-            className="w-full pl-12 pr-4 py-4 bg-white/90 rounded-2xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border-none text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-4 focus:ring-wine-50/50 transition-all text-[16px] font-medium"
+            className="w-full pl-12 pr-12 py-4 bg-white/90 rounded-2xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border-none text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-4 focus:ring-wine-50/50 transition-all text-[16px] font-medium"
             placeholder="이름, 지역, 생산자 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -559,6 +698,31 @@ export function CellarListClient({
               d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
             />
           </svg>
+
+          {searchTerm.trim() ? (
+            <button
+              type="button"
+              aria-label="검색어 지우기"
+              className="absolute right-3 top-3.5 p-2 rounded-full bg-white/70 border border-stone-200 text-stone-500 hover:bg-white hover:text-stone-700 transition-colors"
+              onClick={() => {
+                setSearchTerm("");
+                void setQ("");
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-4 h-4"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M4.22 4.22a.75.75 0 011.06 0L10 8.94l4.72-4.72a.75.75 0 111.06 1.06L11.06 10l4.72 4.72a.75.75 0 11-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 11-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 010-1.06z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          ) : null}
         </div>
 
         <div className="space-y-2 mb-2">
@@ -935,6 +1099,34 @@ export function CellarListClient({
           <div ref={loadMoreRef} className="h-1" aria-hidden="true" />
         )}
       </div>
+
+      {undoWine ? (
+        <div className="fixed left-0 right-0 bottom-4 z-[70] px-4">
+          <div className="mx-auto max-w-md rounded-2xl border border-stone-200 bg-white/90 backdrop-blur shadow-xl px-4 py-3 flex items-center gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-extrabold text-stone-900 truncate">
+                {undoWine.producer}
+              </div>
+              <div className="text-[11px] font-semibold text-stone-500 truncate">
+                한 병 마셨습니다. 실수였나요?
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleUndoRestore()}
+              disabled={isUndoing}
+              className={[
+                "ml-auto flex-shrink-0 rounded-full px-4 py-2 text-xs font-extrabold border shadow-sm transition-all",
+                isUndoing
+                  ? "bg-stone-100 text-stone-400 border-stone-100 cursor-not-allowed"
+                  : "bg-stone-900 text-white border-stone-900 hover:opacity-90 active:scale-95",
+              ].join(" ")}
+            >
+              {isUndoing ? "처리 중..." : "되돌리기"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {confirmingWine ? (
         <div

@@ -38,6 +38,47 @@ export async function openBottleFromDetail(formData: FormData) {
   revalidatePath(`/h/${houseId}/cellar`);
 }
 
+export async function restoreBottleFromDetail(formData: FormData) {
+  const houseId = getString(formData, "houseId");
+  const wineId = getString(formData, "wineId");
+  if (!houseId || !wineId) redirect("/app?error=bad-request");
+
+  const supabase = await createClient();
+
+  const current = await supabase
+    .from("wines")
+    .select("stock_qty,purchase_qty_total")
+    .eq("id", wineId)
+    .eq("house_id", houseId)
+    .maybeSingle();
+
+  if (current.error || !current.data) {
+    await setFlash({
+      kind: "error",
+      message: current.error?.message ?? "와인을 찾을 수 없어요.",
+    });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+
+  const stockQty = Number(current.data.stock_qty ?? 0);
+  const purchaseQtyTotal = Number(current.data.purchase_qty_total ?? 0);
+  const nextStockQty = Math.min(stockQty + 1, purchaseQtyTotal);
+
+  const { error } = await supabase
+    .from("wines")
+    .update({ stock_qty: nextStockQty })
+    .eq("id", wineId)
+    .eq("house_id", houseId);
+
+  if (error) {
+    await setFlash({ kind: "error", message: error.message });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+
+  revalidatePath(`/h/${houseId}/wine/${wineId}`);
+  revalidatePath(`/h/${houseId}/cellar`);
+}
+
 export async function updateNotes(formData: FormData) {
   const houseId = getString(formData, "houseId");
   const wineId = getString(formData, "wineId");

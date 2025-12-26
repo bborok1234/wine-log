@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui";
@@ -27,6 +28,7 @@ export function ConsumeWineModal({
   triggerContent,
   fullWidth = true,
 }: Props) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -82,14 +84,14 @@ export function ConsumeWineModal({
               </Button>
               <form
                 className="w-full"
-                onSubmit={async () => {
+                onSubmit={async (e) => {
+                  e.preventDefault();
                   setSubmitting(true);
                   try {
-                    const fd = new FormData();
-                    fd.append("houseId", houseId);
-                    fd.append("wineId", wineId);
+                    const fd = new FormData(e.currentTarget);
                     await formAction(fd);
                     setIsOpen(false);
+                    router.refresh();
                   } finally {
                     setSubmitting(false);
                   }

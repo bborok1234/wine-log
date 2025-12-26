@@ -10,6 +10,7 @@ import {
   deletePurchase,
   deleteWine,
   openBottleFromDetail,
+  restoreBottleFromDetail,
   updateNotes,
   updatePurchase,
   updateWineInfo,
@@ -37,7 +38,7 @@ export default async function WineDetailPage({
   const wine = await supabase
     .from("wines")
     .select(
-      "id,producer,name,vintage,country,region,type,stock_qty,avg_purchase_price,rating,comment,tasting_review,label_photo_urls,sommelier_advice"
+      "id,producer,name,vintage,country,region,type,stock_qty,purchase_qty_total,avg_purchase_price,rating,comment,tasting_review,label_photo_urls,sommelier_advice"
     )
     .eq("id", wineId)
     .eq("house_id", houseId)
@@ -132,6 +133,7 @@ export default async function WineDetailPage({
         region: w.region,
         type: w.type,
         stockQty: w.stock_qty,
+        purchaseQtyTotal: w.purchase_qty_total ?? 0,
         avgPurchasePrice: w.avg_purchase_price,
         rating: w.rating,
         comment: w.comment,
@@ -161,6 +163,7 @@ export default async function WineDetailPage({
         }) ?? []
       }
       openBottleAction={openBottleFromDetail}
+      restoreBottleAction={restoreBottleFromDetail}
       updateNotesAction={updateNotes}
       updateWineInfoAction={updateWineInfo}
       updatePurchaseAction={updatePurchase}

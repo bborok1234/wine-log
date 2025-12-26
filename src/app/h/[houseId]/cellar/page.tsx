@@ -5,7 +5,7 @@ import { resolveWineImageUrls } from "@/lib/storage-image";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
-import { openBottle } from "./actions";
+import { openBottle, restoreBottle } from "./actions";
 import { AiRecommendationFab } from "./ai-recommendation-fab";
 import { CellarListClient } from "./cellar-list-client";
 
@@ -231,6 +231,7 @@ export default async function CellarPage({
           stats: stats.data ?? null,
         }}
         openBottleAction={openBottle}
+        restoreBottleAction={restoreBottle}
       />
     </Layout>
   );

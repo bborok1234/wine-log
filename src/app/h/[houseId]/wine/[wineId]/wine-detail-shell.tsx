@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -40,6 +41,7 @@ interface WineDetailData {
   region: string | null;
   type: string | null;
   stockQty: number;
+  purchaseQtyTotal: number;
   avgPurchasePrice: number;
   rating: number | null;
   comment: string | null;
@@ -147,6 +149,7 @@ export function WineDetailShell({
   purchases,
   flashError,
   openBottleAction,
+  restoreBottleAction,
   updateNotesAction,
   updateWineInfoAction,
   updatePurchaseAction,
@@ -160,12 +163,14 @@ export function WineDetailShell({
   purchases: PurchaseItem[];
   flashError: string | null;
   openBottleAction: (formData: FormData) => void | Promise<void>;
+  restoreBottleAction: (formData: FormData) => void | Promise<void>;
   updateNotesAction: (formData: FormData) => void | Promise<void>;
   updateWineInfoAction: (formData: FormData) => void | Promise<void>;
   updatePurchaseAction: (formData: FormData) => void | Promise<void>;
   deleteWineAction: (formData: FormData) => void | Promise<void>;
   deletePurchaseAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const router = useRouter();
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [isEditingReview, setIsEditingReview] = useState(false);
   const [showDeleteWineConfirm, setShowDeleteWineConfirm] = useState(false);
@@ -184,6 +189,7 @@ export function WineDetailShell({
   }));
   const [isSavingInfo, setIsSavingInfo] = useState(false);
   const [isSavingReview, setIsSavingReview] = useState(false);
+  const [isRestoringBottle, setIsRestoringBottle] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [labelPath, setLabelPath] = useState<string>("");
@@ -593,6 +599,39 @@ export function WineDetailShell({
                       wine.stockQty > 0 ? "한 병 마시기 🥂" : "재고 없음"
                     }
                   />
+
+                  <form
+                    className="w-full"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (isRestoringBottle) return;
+                      setIsRestoringBottle(true);
+                      try {
+                        const fd = new FormData(e.currentTarget);
+                        await restoreBottleAction(fd);
+                        router.refresh();
+                      } finally {
+                        setIsRestoringBottle(false);
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="houseId" value={houseId} />
+                    <input type="hidden" name="wineId" value={wine.id} />
+                    <Button
+                      fullWidth
+                      type="submit"
+                      variant="secondary"
+                      loading={isRestoringBottle}
+                      disabled={
+                        isRestoringBottle ||
+                        wine.stockQty >= wine.purchaseQtyTotal
+                      }
+                      className="!py-3 shadow-xl w-full text-base"
+                      title="실수로 마신 경우 재고를 1병 되돌립니다."
+                    >
+                      되돌리기 +1
+                    </Button>
+                  </form>
 
                   {!sommelierAdvice ? (
                     <button
