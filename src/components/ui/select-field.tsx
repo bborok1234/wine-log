@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Select,
@@ -18,6 +18,7 @@ interface SelectFieldOption {
 interface SelectFieldProps {
   label?: string;
   name?: string;
+  id?: string;
   value?: string;
   defaultValue?: string;
   placeholder?: string;
@@ -34,6 +35,7 @@ function isControlled(value: SelectFieldProps["value"]) {
 export function SelectField({
   label,
   name,
+  id,
   value,
   defaultValue,
   placeholder = "선택",
@@ -50,6 +52,20 @@ export function SelectField({
   const [internalValue, setInternalValue] = useState(() => initial);
   const currentValue = isControlled(value) ? value : internalValue;
 
+  useEffect(() => {
+    if (!id) return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      if (typeof detail === "string") {
+        if (!isControlled(value)) setInternalValue(detail);
+        onValueChange?.(detail);
+      }
+    };
+    const channel = `select-field:set:${id}`;
+    window.addEventListener(channel, handler as EventListener);
+    return () => window.removeEventListener(channel, handler as EventListener);
+  }, [id, onValueChange, value]);
+
   return (
     <div className="mb-5 group">
       {label ? (
@@ -58,7 +74,15 @@ export function SelectField({
         </label>
       ) : null}
 
-      {name ? <input type="hidden" name={name} value={currentValue} /> : null}
+      {name ? (
+        <input
+          type="hidden"
+          id={id}
+          name={name}
+          value={currentValue}
+          readOnly
+        />
+      ) : null}
 
       <Select
         value={currentValue}

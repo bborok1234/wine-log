@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateJson } from "@/lib/ai/openai";
 import { requireAuthedUser } from "@/lib/house";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 interface AnalyzeLabelRequestBody {
@@ -24,6 +25,51 @@ interface ParsedWine {
     | "fortified"
     | "other"
     | null;
+}
+
+const SPARKLING_KEYWORDS = [
+  "champagne",
+  "crémant",
+  "cremant",
+  "cava",
+  "prosecco",
+  "schaumwein",
+  "sparkling",
+  "brut",
+  "extra brut",
+  "methode",
+  "méthode",
+  "champenoise",
+  "traditional",
+  "sekt",
+  "frizzante",
+  "spumante",
+  "espumante",
+  "bubbles",
+];
+
+const ROSE_KEYWORDS = ["rosé", "rose", "rosado", "rosato", "blush"];
+
+function normalizeRegion(region: string | null): string | null {
+  if (!region) return region;
+  const lowered = region.toLowerCase();
+  if (lowered.includes("champagne") || lowered.includes("샴페인"))
+    return "상파뉴";
+  return region;
+}
+
+function normalizeWineType(parsed: ParsedWine): ParsedWine {
+  const text = [parsed.name, parsed.producer, parsed.region]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const hasSparkling = SPARKLING_KEYWORDS.some((k) => text.includes(k));
+  const hasRose = ROSE_KEYWORDS.some((k) => text.includes(k));
+
+  const nextType = hasSparkling ? "sparkling" : hasRose ? "rose" : parsed.type;
+
+  return { ...parsed, type: nextType };
 }
 
 export async function POST(req: Request) {
@@ -56,6 +102,8 @@ export async function POST(req: Request) {
     "- country는 국가명만(예: 프랑스/이탈리아/미국/스페인/독일/칠레/아르헨티나/호주/뉴질랜드/남아공/포르투갈/오스트리아/헝가리/그리스/우루과이/일본/중국).",
     "- region은 AOC/지역/산지(예: 부르고뉴, 생-베랑, 토스카나 등).",
     "- type: red|white|sparkling|rose|dessert|fortified|other. 모르면 other 또는 null.",
+    "- Champagne/Crémant/Cava/Prosecco/Sekt/Frizzante/Spumante/Brut 등 스파클링 단어가 보이면 반드시 sparkling으로 분류.",
+    "- Rosé/Rosado/Rosato/Blush 등 핑크 계열 단어가 보이면 rose로 분류.",
     "- 확실치 않은 필드는 null.",
     "",
     "예시(설명용, 그대로 출력하지 말 것):",
@@ -118,5 +166,21 @@ export async function POST(req: Request) {
     jsonSchema: { name: "parsed_wine", schema: parsedWineSchema, strict: true },
   });
 
-  return NextResponse.json({ data: parsed });
+  logger.debug("[analyze-label] parsed", {
+    type: parsed.type,
+    producer: parsed.producer,
+    name: parsed.name,
+    vintage: parsed.vintage,
+    country: parsed.country,
+    region: parsed.region,
+    base64Size: base64Data.length,
+    mimeType,
+  });
+
+  const normalized = normalizeWineType({
+    ...parsed,
+    region: normalizeRegion(parsed.region),
+  });
+
+  return NextResponse.json({ data: normalized });
 }

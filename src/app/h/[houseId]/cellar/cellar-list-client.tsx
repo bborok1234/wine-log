@@ -187,6 +187,18 @@ export function CellarListClient({
 
   const priceRange = useMemo(() => ({ min: 0, max: 500000 }), []);
 
+  const detailQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (stockFilter) params.set("stock", stockFilter);
+    if (typeFilter) params.set("type", typeFilter);
+    if (countryFilter) params.set("country", countryFilter);
+    if (sortMode) params.set("sort", sortMode);
+    if (priceMin) params.set("priceMin", priceMin);
+    if (priceMax) params.set("priceMax", priceMax);
+    return params.toString();
+  }, [countryFilter, priceMax, priceMin, q, sortMode, stockFilter, typeFilter]);
+
   const priceFilter = useMemo(() => {
     const minRaw = Number(priceMin || priceRange.min);
     const maxRaw = Number(priceMax || priceRange.max);
@@ -528,7 +540,7 @@ export function CellarListClient({
 
         <div className="relative mb-4">
           <input
-            className="w-full pl-12 pr-4 py-4 bg-white/90 rounded-2xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border-none text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-4 focus:ring-wine-50/50 transition-all text-sm font-medium"
+            className="w-full pl-12 pr-4 py-4 bg-white/90 rounded-2xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border-none text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-4 focus:ring-wine-50/50 transition-all text-[16px] font-medium"
             placeholder="이름, 지역, 생산자 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -777,7 +789,12 @@ export function CellarListClient({
                   index < 20 ? { animationDelay: `${index * 50}ms` } : undefined
                 }
               >
-                <Link href={`/h/${houseId}/wine/${wine.id}`} className="block">
+                <Link
+                  href={`/h/${houseId}/wine/${wine.id}${
+                    detailQuery ? `?${detailQuery}` : ""
+                  }`}
+                  className="block"
+                >
                   <Card
                     className={[
                       "relative flex flex-col gap-3 group overflow-hidden",

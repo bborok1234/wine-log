@@ -42,3 +42,4 @@ execute function public.after_purchase_delete_update_wine_stats();
 grant delete on table public.purchases to authenticated;
 
 commit;
+

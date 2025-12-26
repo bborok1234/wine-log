@@ -305,6 +305,7 @@ export default async function AddPurchasePage({
                     <SelectField
                       label="종류(선택)"
                       name="type"
+                      id="ai-type"
                       defaultValue="red"
                       options={[
                         { label: "레드", value: "red" },

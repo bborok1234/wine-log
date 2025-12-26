@@ -120,6 +120,54 @@ export async function updateWineInfo(formData: FormData) {
   revalidatePath(`/h/${houseId}/wine/${wineId}`);
 }
 
+export async function updatePurchase(formData: FormData) {
+  const houseId = getString(formData, "houseId");
+  const wineId = getString(formData, "wineId");
+  const purchaseId = getString(formData, "purchaseId");
+  if (!houseId || !wineId || !purchaseId) redirect("/app?error=bad-request");
+
+  const store = getString(formData, "store");
+  const unitPriceRaw = getString(formData, "unit_price");
+  const quantityRaw = getString(formData, "quantity");
+  const purchasedAt = getString(formData, "purchased_at") || null;
+
+  const unitPrice = Number(unitPriceRaw);
+  const quantity = Number(quantityRaw);
+
+  if (!store) {
+    await setFlash({ kind: "error", message: "구매처는 필수입니다." });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+  if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+    await setFlash({ kind: "error", message: "가격을 확인해주세요." });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    await setFlash({ kind: "error", message: "수량을 확인해주세요." });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("purchases")
+    .update({
+      store,
+      unit_price: unitPrice,
+      quantity: Math.trunc(quantity),
+      purchased_at: purchasedAt,
+    })
+    .eq("id", purchaseId)
+    .eq("house_id", houseId);
+
+  if (error) {
+    await setFlash({ kind: "error", message: error.message });
+    redirect(`/h/${houseId}/wine/${wineId}`);
+  }
+
+  revalidatePath(`/h/${houseId}/wine/${wineId}`);
+  revalidatePath(`/h/${houseId}/cellar`);
+}
+
 export async function deleteWine(formData: FormData) {
   const houseId = getString(formData, "houseId");
   const wineId = getString(formData, "wineId");

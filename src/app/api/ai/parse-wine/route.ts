@@ -25,6 +25,54 @@ interface ParsedWine {
     | null;
 }
 
+const SPARKLING_KEYWORDS = [
+  "champagne",
+  "crémant",
+  "cremant",
+  "cava",
+  "prosecco",
+  "schaumwein",
+  "sparkling",
+  "brut",
+  "extra brut",
+  "methode",
+  "méthode",
+  "champenoise",
+  "traditional",
+  "sekt",
+  "frizzante",
+  "spumante",
+  "espumante",
+  "bubbles",
+];
+
+const ROSE_KEYWORDS = ["rosé", "rose", "rosado", "rosato", "blush"];
+
+function normalizeRegion(region: string | null): string | null {
+  if (!region) return region;
+  const lowered = region.toLowerCase();
+  if (lowered.includes("champagne") || lowered.includes("샴페인")) return "상파뉴";
+  return region;
+}
+
+function normalizeWineType(parsed: ParsedWine): ParsedWine {
+  const text = [parsed.name, parsed.producer, parsed.region]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const hasSparkling = SPARKLING_KEYWORDS.some((k) => text.includes(k));
+  const hasRose = ROSE_KEYWORDS.some((k) => text.includes(k));
+
+  const nextType = hasSparkling
+    ? "sparkling"
+    : hasRose
+    ? "rose"
+    : parsed.type;
+
+  return { ...parsed, type: nextType };
+}
+
 export async function POST(req: Request) {
   const supabase = await createClient();
   await requireAuthedUser(supabase);
@@ -49,6 +97,8 @@ export async function POST(req: Request) {
     "- region: 지역/AOC/산지(예: 부르고뉴, 토스카나, 나파 밸리 등). 모르면 null",
     "- 영어/프랑스어 표기가 있으면 가능하면 한국어로 표기(단, 고유명사는 원문을 최대한 유지)",
     "- type: red|white|sparkling|rose|dessert|fortified|other. 모르면 other 또는 null",
+    "- Champagne/Crémant/Cava/Prosecco/Sekt/Frizzante/Spumante/Brut 등 스파클링 단어가 보이면 반드시 sparkling으로 분류.",
+    "- Rosé/Rosado/Rosato/Blush 등 핑크 계열 단어가 보이면 rose로 분류.",
   ].join("\n");
 
   const parsedWineSchema = {
@@ -103,5 +153,9 @@ export async function POST(req: Request) {
     prompt,
     jsonSchema: { name: "parsed_wine", schema: parsedWineSchema, strict: true },
   });
-  return NextResponse.json({ data: parsed });
+  const normalized = normalizeWineType({
+    ...parsed,
+    region: normalizeRegion(parsed.region),
+  });
+  return NextResponse.json({ data: normalized });
 }

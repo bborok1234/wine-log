@@ -11,16 +11,23 @@ import {
   deleteWine,
   openBottleFromDetail,
   updateNotes,
+  updatePurchase,
   updateWineInfo,
 } from "./actions";
 import { WineDetailShell } from "./wine-detail-shell";
 
 export default async function WineDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ houseId: string; wineId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { houseId, wineId } = await params;
+  const sp = (await (searchParams ?? Promise.resolve({}))) as Record<
+    string,
+    string | string[] | undefined
+  >;
   const flash = await getFlash();
 
   const supabase = await createClient();
@@ -87,10 +94,34 @@ export default async function WineDetailPage({
       </Layout>
     );
 
+  const backParams = new URLSearchParams();
+  const safeString = (value: unknown) =>
+    typeof value === "string" ? value : undefined;
+  const q = safeString(sp.q);
+  const stock = safeString(sp.stock);
+  const type = safeString(sp.type);
+  const country = safeString(sp.country);
+  const sort = safeString(sp.sort);
+  const priceMin = safeString(sp.priceMin);
+  const priceMax = safeString(sp.priceMax);
+
+  if (q) backParams.set("q", q);
+  if (stock) backParams.set("stock", stock);
+  if (type) backParams.set("type", type);
+  if (country) backParams.set("country", country);
+  if (sort) backParams.set("sort", sort);
+  if (priceMin) backParams.set("priceMin", priceMin);
+  if (priceMax) backParams.set("priceMax", priceMax);
+
+  const backHref = backParams.toString()
+    ? `/h/${houseId}/cellar?${backParams.toString()}`
+    : `/h/${houseId}/cellar`;
+
   return (
     <WineDetailShell
       houseId={houseId}
       heroUrl={hero}
+      backHref={backHref}
       flashError={flash?.kind === "error" ? flash.message : null}
       wine={{
         id: w.id,
@@ -132,6 +163,7 @@ export default async function WineDetailPage({
       openBottleAction={openBottleFromDetail}
       updateNotesAction={updateNotes}
       updateWineInfoAction={updateWineInfo}
+      updatePurchaseAction={updatePurchase}
       deleteWineAction={deleteWine}
       deletePurchaseAction={deletePurchase}
     />

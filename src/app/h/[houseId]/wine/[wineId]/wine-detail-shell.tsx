@@ -141,6 +141,7 @@ function base64ToBlob(base64: string, mimeType: string) {
 
 export function WineDetailShell({
   houseId,
+  backHref,
   wine,
   heroUrl,
   purchases,
@@ -148,10 +149,12 @@ export function WineDetailShell({
   openBottleAction,
   updateNotesAction,
   updateWineInfoAction,
+  updatePurchaseAction,
   deleteWineAction,
   deletePurchaseAction,
 }: {
   houseId: string;
+  backHref: string;
   wine: WineDetailData;
   heroUrl: string | null;
   purchases: PurchaseItem[];
@@ -159,6 +162,7 @@ export function WineDetailShell({
   openBottleAction: (formData: FormData) => void | Promise<void>;
   updateNotesAction: (formData: FormData) => void | Promise<void>;
   updateWineInfoAction: (formData: FormData) => void | Promise<void>;
+  updatePurchaseAction: (formData: FormData) => void | Promise<void>;
   deleteWineAction: (formData: FormData) => void | Promise<void>;
   deletePurchaseAction: (formData: FormData) => void | Promise<void>;
 }) {
@@ -168,6 +172,16 @@ export function WineDetailShell({
   const [deletingPurchaseId, setDeletingPurchaseId] = useState<string | null>(
     null
   );
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(
+    null
+  );
+  const [savingPurchaseId, setSavingPurchaseId] = useState<string | null>(null);
+  const [purchaseForm, setPurchaseForm] = useState(() => ({
+    store: "",
+    unitPrice: "",
+    quantity: "",
+    purchasedAt: "",
+  }));
   const [isSavingInfo, setIsSavingInfo] = useState(false);
   const [isSavingReview, setIsSavingReview] = useState(false);
 
@@ -218,6 +232,34 @@ export function WineDetailShell({
     }
   }
 
+  function startEditPurchase(purchase: PurchaseItem) {
+    setEditingPurchaseId(purchase.id);
+    setPurchaseForm({
+      store: purchase.store,
+      unitPrice: String(purchase.unitPrice ?? ""),
+      quantity: String(purchase.quantity ?? ""),
+      purchasedAt: purchase.purchasedAt
+        ? purchase.purchasedAt.slice(0, 10)
+        : "",
+    });
+  }
+
+  async function handleSubmitPurchase(
+    e: FormEvent<HTMLFormElement>,
+    purchaseId: string
+  ) {
+    e.preventDefault();
+    if (savingPurchaseId) return;
+    setSavingPurchaseId(purchaseId);
+    const formData = new FormData(e.currentTarget);
+    try {
+      await updatePurchaseAction(formData);
+      setEditingPurchaseId(null);
+    } finally {
+      setSavingPurchaseId(null);
+    }
+  }
+
   const {
     isOpen: isAdviceOpen,
     isLoading: isLoadingAdvice,
@@ -261,7 +303,7 @@ export function WineDetailShell({
 
   return (
     <Layout
-      backHref={`/h/${houseId}/cellar`}
+      backHref={backHref}
       transparentHeader={transparentHeader}
       actions={
         <div className="flex gap-2">
@@ -816,6 +858,13 @@ export function WineDetailShell({
                           <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg text-xs">
                             + {p.quantity}병
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => startEditPurchase(p)}
+                            className="text-xs font-bold text-stone-500 hover:text-wine-600 px-2 py-1 rounded-full border border-stone-200 hover:border-wine-200 transition-colors"
+                          >
+                            수정
+                          </button>
                           <form
                             action={deletePurchaseAction}
                             onSubmit={(e) => {
@@ -865,26 +914,111 @@ export function WineDetailShell({
                           </form>
                         </div>
                       </div>
-                      <div className="flex justify-between items-end mt-2">
-                        <span className="text-sm text-stone-500 font-medium flex items-center gap-1">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                            className="w-3 h-3 text-stone-300"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M9.664 1.319a.75.75 0 01.672 0 41.059 41.059 0 018.136 5.097l.08.06a.75.75 0 01-.167 1.21c-.42.169-.702.57-.761 1.035l-.115.866a15.22 15.22 0 01-.264 1.57C16.632 15.508 13.922 18.5 10 18.5c-3.922 0-6.632-2.992-7.246-7.344-.121-.863-.195-1.558-.264-1.57l-.115-.866a1.25 1.25 0 00-.76-1.035.75.75 0 01-.168-1.21l.08-.06a41.059 41.059 0 018.137-5.097zM10 3.167a.75.75 0 01.75.75v3.186l2.353 1.176a.75.75 0 11-.67 1.342L10 8.384 7.567 9.621a.75.75 0 11-.67-1.342L9.25 7.103V3.917A.75.75 0 0110 3.167z"
-                              clipRule="evenodd"
+                      {editingPurchaseId === p.id ? (
+                        <form
+                          className="mt-3 space-y-3"
+                          onSubmit={(e) => void handleSubmitPurchase(e, p.id)}
+                        >
+                          <input type="hidden" name="houseId" value={houseId} />
+                          <input type="hidden" name="wineId" value={wine.id} />
+                          <input type="hidden" name="purchaseId" value={p.id} />
+                          <div className="grid grid-cols-2 gap-3">
+                            <Input
+                              label="구매처"
+                              name="store"
+                              value={purchaseForm.store}
+                              onChange={(e) =>
+                                setPurchaseForm((prev) => ({
+                                  ...prev,
+                                  store: e.target.value,
+                                }))
+                              }
+                              required
                             />
-                          </svg>
-                          {p.store}
-                        </span>
-                        <span className="text-sm font-bold text-stone-400">
-                          {Math.round(p.unitPrice).toLocaleString()}원
-                        </span>
-                      </div>
+                            <Input
+                              label="구매일(선택)"
+                              name="purchased_at"
+                              type="date"
+                              value={purchaseForm.purchasedAt}
+                              onChange={(e) =>
+                                setPurchaseForm((prev) => ({
+                                  ...prev,
+                                  purchasedAt: e.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Input
+                              label="단가(원)"
+                              name="unit_price"
+                              inputMode="decimal"
+                              type="number"
+                              value={purchaseForm.unitPrice}
+                              onChange={(e) =>
+                                setPurchaseForm((prev) => ({
+                                  ...prev,
+                                  unitPrice: e.target.value,
+                                }))
+                              }
+                              required
+                            />
+                            <Input
+                              label="수량"
+                              name="quantity"
+                              inputMode="numeric"
+                              type="number"
+                              value={purchaseForm.quantity}
+                              onChange={(e) =>
+                                setPurchaseForm((prev) => ({
+                                  ...prev,
+                                  quantity: e.target.value,
+                                }))
+                              }
+                              required
+                            />
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              fullWidth
+                              onClick={() => setEditingPurchaseId(null)}
+                              disabled={savingPurchaseId === p.id}
+                            >
+                              취소
+                            </Button>
+                            <Button
+                              type="submit"
+                              fullWidth
+                              loading={savingPurchaseId === p.id}
+                            >
+                              저장
+                            </Button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="flex justify-between items-end mt-2">
+                          <span className="text-sm text-stone-500 font-medium flex items-center gap-1">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                              className="w-3 h-3 text-stone-300"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M9.664 1.319a.75.75 0 01.672 0 41.059 41.059 0 018.136 5.097l.08.06a.75.75 0 01-.167 1.21c-.42.169-.702.57-.761 1.035l-.115.866a15.22 15.22 0 01-.264 1.57C16.632 15.508 13.922 18.5 10 18.5c-3.922 0-6.632-2.992-7.246-7.344-.121-.863-.195-1.558-.264-1.57l-.115-.866a1.25 1.25 0 00-.76-1.035.75.75 0 01-.168-1.21l.08-.06a41.059 41.059 0 018.137-5.097zM10 3.167a.75.75 0 01.75.75v3.186l2.353 1.176a.75.75 0 11-.67 1.342L10 8.384 7.567 9.621a.75.75 0 11-.67-1.342L9.25 7.103V3.917A.75.75 0 0110 3.167z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            {p.store}
+                          </span>
+                          <span className="text-sm font-bold text-stone-400">
+                            {Math.round(p.unitPrice).toLocaleString()}원
+                          </span>
+                        </div>
+                      )}
                     </Card>
                   </div>
                 ))}

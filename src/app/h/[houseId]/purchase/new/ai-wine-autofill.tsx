@@ -141,7 +141,11 @@ export function AiWineAutofill({
       setInputValue(vintageId, String(parsed.vintage));
     if (parsed.country) setInputValue(countryId, parsed.country);
     if (parsed.region) setInputValue(regionId, parsed.region);
-    if (parsed.type) setInputValue(typeId, parsed.type);
+    if (parsed.type) {
+      window.dispatchEvent(
+        new CustomEvent(`select-field:set:${typeId}`, { detail: parsed.type })
+      );
+    }
   }
 
   async function handleAutoFillFromText() {
@@ -216,7 +220,6 @@ export function AiWineAutofill({
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
