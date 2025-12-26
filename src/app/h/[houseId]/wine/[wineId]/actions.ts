@@ -129,7 +129,8 @@ export async function updatePurchase(formData: FormData) {
   const store = getString(formData, "store");
   const unitPriceRaw = getString(formData, "unit_price");
   const quantityRaw = getString(formData, "quantity");
-  const purchasedAt = getString(formData, "purchased_at") || null;
+  const purchasedAtRaw = getString(formData, "purchased_at");
+  const purchasedAt = purchasedAtRaw ? purchasedAtRaw : undefined;
 
   const unitPrice = Number(unitPriceRaw);
   const quantity = Number(quantityRaw);
